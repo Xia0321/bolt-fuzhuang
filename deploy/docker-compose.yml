@@ -98,6 +98,7 @@ services:
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
       SALEOR_APP_TOKEN: ${SALEOR_APP_TOKEN:-}
+      GW_ADMIN_SECRET: ${GW_ADMIN_SECRET:-}
     ports:
       - "127.0.0.1:8100:8100"
     depends_on:
