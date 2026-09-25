@@ -308,10 +308,10 @@ function readBody(req, limit = 10_000) {
 }
 
 const ROUTES = {
-  '/api/register': { handler: register, enabled: () => REGISTER_ENABLED },
-  '/api/login': { handler: login, enabled: () => CAPTCHA_ENABLED },
-  '/api/password/reset': { handler: passwordReset, enabled: () => CAPTCHA_ENABLED },
-  '/api/checkout/complete': { handler: checkoutComplete, enabled: () => CAPTCHA_ENABLED },
+  '/api/register': { handler: register, enabled: () => REGISTER_ENABLED || captchaBypassEnabled },
+  '/api/login': { handler: login, enabled: () => CAPTCHA_ENABLED || captchaBypassEnabled },
+  '/api/password/reset': { handler: passwordReset, enabled: () => CAPTCHA_ENABLED || captchaBypassEnabled },
+  '/api/checkout/complete': { handler: checkoutComplete, enabled: () => CAPTCHA_ENABLED || captchaBypassEnabled },
 };
 
 const server = http.createServer(async (req, res) => {

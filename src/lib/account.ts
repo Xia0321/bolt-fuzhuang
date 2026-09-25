@@ -71,9 +71,13 @@ export interface AccountConfig {
 }
 
 let configPromise: Promise<AccountConfig> | null = null;
+let configFetchedAt = 0;
+const CONFIG_TTL = 30_000; // 30 秒后重新拉取，确保 bypass 开关能及时生效
 
 export function fetchAccountConfig(): Promise<AccountConfig> {
-  configPromise ??= fetch(`${ACCOUNT_API_URL}/config`)
+  if (configPromise && Date.now() - configFetchedAt < CONFIG_TTL) return configPromise;
+  configFetchedAt = Date.now();
+  configPromise = fetch(`${ACCOUNT_API_URL}/config`)
     .then(res => (res.ok ? res.json() : Promise.reject()))
     .catch(() => {
       // 服务不可用时不缓存，下次重试
