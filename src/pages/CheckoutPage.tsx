@@ -33,6 +33,7 @@ export function CheckoutPage() {
   const [address, setAddress] = useState<Address>(() => emptyAddress(channelConfig?.defaultCountry ?? ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const accountConfig = useAccountConfig();
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
@@ -82,14 +83,18 @@ export function CheckoutPage() {
   const withBusy = async (action: () => Promise<void>) => {
     setBusy(true);
     setError('');
+    setFieldErrors({});
     try {
       await action();
     } catch (e) {
-      // Saleor 的错误信息为英文，前面加上出错字段的名称方便定位
       const key = authErrorKey(e);
-      const label = e instanceof SaleorError && e.field ? fieldLabels[e.field] : '';
       const message = key ? t(key) : e instanceof Error ? e.message : t('error_generic');
-      setError(label ? `${label}: ${message}` : message);
+      const field = e instanceof SaleorError && e.field ? e.field : null;
+      if (field) {
+        setFieldErrors({ [field]: message });
+      } else {
+        setError(message);
+      }
     } finally {
       setBusy(false);
     }
@@ -173,8 +178,8 @@ export function CheckoutPage() {
               />
               {step === 'address' ? (
                 <form onSubmit={submitAddress} className="space-y-4">
-                  <Field label={t('checkout_email')} required>
-                    <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+                  <Field label={t('checkout_email')} required error={fieldErrors['email']}>
+                    <input type="email" className={`${inputClass}${fieldErrors['email'] ? ' border-red-400 focus:border-red-500' : ''}`} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
                   </Field>
                   {user && user.addresses.length > 0 && (
                     <Field label={t('checkout_saved_address')}>
@@ -195,7 +200,7 @@ export function CheckoutPage() {
                       </select>
                     </Field>
                   )}
-                  <AddressFields address={address} setAddress={setAddress} />
+                  <AddressFields address={address} setAddress={setAddress} fieldErrors={fieldErrors} />
                   <PrimaryButton busy={busy}>{t('checkout_continue_shipping')}</PrimaryButton>
                 </form>
               ) : (

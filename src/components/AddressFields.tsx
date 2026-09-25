@@ -18,7 +18,7 @@ function localizeChoices(choices: Choice[], preferLatin: boolean): Choice[] {
 }
 
 // 收货地址表单（结算页与地址簿共用）。各国地址格式不同，字段按 Saleor 返回的规则动态显示
-export function AddressFields({ address, setAddress }: { address: Address; setAddress: Dispatch<SetStateAction<Address>> }) {
+export function AddressFields({ address, setAddress, fieldErrors = {} }: { address: Address; setAddress: Dispatch<SetStateAction<Address>>; fieldErrors?: Record<string, string> }) {
   const { locale, channel, t } = useI18n();
   const [countries, setCountries] = useState<string[]>([]);
   const [rules, setRules] = useState<AddressRules | null>(null);
@@ -49,13 +49,16 @@ export function AddressFields({ address, setAddress }: { address: Address; setAd
   // 地址簿中已有地址的国家可能不在当前渠道的配送范围内，也保留在选项中
   const countryOptions = countries.includes(address.country) || !address.country ? countries : [address.country, ...countries];
 
+  const err = (field: string) => fieldErrors[field];
+  const errCls = (field: string) => err(field) ? ' border-red-400 focus:border-red-500' : '';
+
   const lastNameFirst = locale !== 'en';
   const nameFields = [
-    <Field key="last" label={t('checkout_last_name')} required>
-      <input className={inputClass} required value={address.lastName} onChange={e => update('lastName')(e.target.value)} autoComplete="family-name" />
+    <Field key="last" label={t('checkout_last_name')} required error={err('lastName')}>
+      <input className={inputClass + errCls('lastName')} required value={address.lastName} onChange={e => update('lastName')(e.target.value)} autoComplete="family-name" />
     </Field>,
-    <Field key="first" label={t('checkout_first_name')} required>
-      <input className={inputClass} required value={address.firstName} onChange={e => update('firstName')(e.target.value)} autoComplete="given-name" />
+    <Field key="first" label={t('checkout_first_name')} required error={err('firstName')}>
+      <input className={inputClass + errCls('firstName')} required value={address.firstName} onChange={e => update('firstName')(e.target.value)} autoComplete="given-name" />
     </Field>,
   ];
 
@@ -122,9 +125,9 @@ export function AddressFields({ address, setAddress }: { address: Address; setAd
           </Field>
         )}
         {isAllowed('postalCode') && (
-          <Field label={t('checkout_postal_code')} required={isRequired('postalCode')}>
+          <Field label={t('checkout_postal_code')} required={isRequired('postalCode')} error={err('postalCode')}>
             <input
-              className={inputClass}
+              className={inputClass + errCls('postalCode')}
               required={isRequired('postalCode')}
               value={address.postalCode}
               placeholder={rules?.postalCodeExamples[0]}
@@ -134,14 +137,14 @@ export function AddressFields({ address, setAddress }: { address: Address; setAd
           </Field>
         )}
       </div>
-      <Field label={t('checkout_street1')} required>
-        <input className={inputClass} required value={address.streetAddress1} onChange={e => update('streetAddress1')(e.target.value)} autoComplete="address-line1" />
+      <Field label={t('checkout_street1')} required error={err('streetAddress1')}>
+        <input className={inputClass + errCls('streetAddress1')} required value={address.streetAddress1} onChange={e => update('streetAddress1')(e.target.value)} autoComplete="address-line1" />
       </Field>
-      <Field label={t('checkout_street2')}>
-        <input className={inputClass} value={address.streetAddress2} onChange={e => update('streetAddress2')(e.target.value)} autoComplete="address-line2" />
+      <Field label={t('checkout_street2')} error={err('streetAddress2')}>
+        <input className={inputClass + errCls('streetAddress2')} value={address.streetAddress2} onChange={e => update('streetAddress2')(e.target.value)} autoComplete="address-line2" />
       </Field>
-      <Field label={t('checkout_phone')} required>
-        <input type="tel" className={inputClass} required value={address.phone} onChange={e => update('phone')(e.target.value)} autoComplete="tel" />
+      <Field label={t('checkout_phone')} required error={err('phone')}>
+        <input type="tel" className={inputClass + errCls('phone')} required value={address.phone} onChange={e => update('phone')(e.target.value)} autoComplete="tel" />
       </Field>
     </>
   );
