@@ -1,43 +1,48 @@
 import { useState, useEffect } from 'react';
 import { useI18n } from '@/i18n/I18nContext';
-import { localized, formatPrice } from '@/i18n/translations';
+import { useStore } from '@/context/StoreContext';
+import { useNav } from '@/context/NavContext';
+import { formatPrice, freeShippingNote } from '@/i18n/translations';
 import { useCart } from '@/context/CartContext';
-import type { Category, Product } from '@/types';
-import type { Route } from '@/lib/router';
+import { freeShippingThreshold } from '@/lib/catalog';
 import { ProductCard } from '@/components/ProductCard';
-import { Check, Minus, Plus, ArrowLeft, ShoppingBag } from 'lucide-react';
+import { Check, Minus, Plus, ArrowLeft, ShoppingBag, Loader2 } from 'lucide-react';
 
-interface ProductDetailPageProps {
-  product: Product | undefined;
-  categories: Category[];
-  products: Product[];
-  navigate: (r: Route) => void;
-}
+const LOW_STOCK = 3;
 
-export function ProductDetailPage({ product, categories, products, navigate }: ProductDetailPageProps) {
+export function ProductDetailPage({ slug }: { slug: string }) {
   const { locale, t } = useI18n();
+  const { store } = useStore();
+  const { navigate } = useNav();
   const { addItem } = useCart();
+  const { products, categories, shippingRules } = store!;
+  const product = products.find(p => p.slug === slug);
+
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
-  const [selectedColor, setSelectedColor] = useState<number>(0);
+  const [selectedColor, setSelectedColor] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [sizeError, setSizeError] = useState(false);
+  const [addError, setAddError] = useState('');
 
   useEffect(() => {
     setSelectedImage(0);
-    setSelectedSize(null);
-    setSelectedColor(0);
+    // 只有一个尺码（如 ONE SIZE）时直接选中
+    setSelectedSize(product?.sizes.length === 1 ? product.sizes[0] : null);
+    setSelectedColor(product?.colors[0]?.slug ?? null);
     setQuantity(1);
     setAdded(false);
     setSizeError(false);
-  }, [product?.id]);
+    setAddError('');
+  }, [product?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!product) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white pt-20">
         <div className="text-center">
-          <p className="text-neutral-400 text-lg mb-4">{t('error_load')}</p>
+          <p className="text-neutral-400 text-lg mb-4">{t('detail_not_found')}</p>
           <button onClick={() => navigate({ name: 'shop' })} className="text-neutral-900 underline text-sm">
             {t('detail_back')}
           </button>
@@ -46,29 +51,38 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
     );
   }
 
-  const category = categories.find(c => c.id === product.category_id);
+  const category = categories.find(c => c.id === product.categoryId);
   const related = products
-    .filter(p => p.category_id === product.category_id && p.id !== product.id)
+    .filter(p => p.categoryId === product.categoryId && p.id !== product.id)
     .slice(0, 4);
 
-  const handleAddToCart = () => {
-    if (product.sizes.length > 1 && !selectedSize) {
+  const findVariant = (size: string | null, color: string | null) =>
+    product.variants.find(v =>
+      (product.sizes.length === 0 || v.size === size) && (product.colors.length === 0 || v.colorSlug === color));
+  const sizeStock = (size: string) => findVariant(size, selectedColor)?.quantityAvailable ?? 0;
+  const variant = findVariant(selectedSize, selectedColor);
+  const price = variant?.price ?? product.price;
+  const available = variant?.quantityAvailable ?? 0;
+  const colorName = product.colors.find(c => c.slug === selectedColor)?.name;
+  const threshold = freeShippingThreshold(shippingRules);
+
+  const handleAddToCart = async () => {
+    if (product.sizes.length > 0 && !selectedSize) {
       setSizeError(true);
       return;
     }
-    const size = selectedSize || product.sizes[0] || 'ONE SIZE';
-    addItem({
-      productId: product.id,
-      slug: product.slug,
-      name: product.name,
-      price: product.price,
-      image: product.images[0],
-      size,
-      colorIndex: selectedColor,
-      quantity,
-    });
-    setAdded(true);
-    setTimeout(() => setAdded(false), 3000);
+    if (!variant) return;
+    setAdding(true);
+    setAddError('');
+    try {
+      await addItem(variant.id, quantity);
+      setAdded(true);
+      setTimeout(() => setAdded(false), 3000);
+    } catch (e) {
+      setAddError(e instanceof Error && /stock/i.test(e.message) ? t('error_stock') : t('error_generic'));
+    } finally {
+      setAdding(false);
+    }
   };
 
   return (
@@ -102,12 +116,14 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
             )}
             {/* Main image */}
             <div className="flex-1 aspect-[3/4] overflow-hidden bg-neutral-100">
-              <img
-                key={selectedImage}
-                src={product.images[selectedImage]}
-                alt={localized(product.name, locale)}
-                className="w-full h-full object-cover animate-[fadeIn_0.4s_ease-out]"
-              />
+              {product.images[selectedImage] && (
+                <img
+                  key={selectedImage}
+                  src={product.images[selectedImage]}
+                  alt={product.name}
+                  className="w-full h-full object-cover animate-[fadeIn_0.4s_ease-out]"
+                />
+              )}
             </div>
           </div>
 
@@ -115,20 +131,20 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
           <div className="md:py-4">
             {category && (
               <p className="text-[11px] tracking-[0.2em] uppercase text-neutral-400 mb-3">
-                {localized(category.name, locale)}
+                {category.name}
               </p>
             )}
             <h1 className="text-2xl md:text-3xl font-light tracking-tight text-neutral-900 mb-4 leading-tight">
-              {localized(product.name, locale)}
+              {product.name}
             </h1>
             <p className="text-xl text-neutral-900 mb-8">
-              {formatPrice(product.price, locale)}
+              {formatPrice(price, locale)}
             </p>
 
-            <div className="mb-8">
-              <p className="text-[14px] text-neutral-600 leading-relaxed">
-                {localized(product.description, locale)}
-              </p>
+            <div className="mb-8 space-y-3">
+              {product.description.split('\n\n').map((para, i) => (
+                <p key={i} className="text-[14px] text-neutral-600 leading-relaxed">{para}</p>
+              ))}
             </div>
 
             {/* Color selection */}
@@ -138,16 +154,16 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
                   {t('detail_color')}
                 </label>
                 <div className="flex gap-3">
-                  {product.colors.map((color, i) => (
+                  {product.colors.map(color => (
                     <button
-                      key={i}
-                      onClick={() => setSelectedColor(i)}
-                      className={`relative w-9 h-9 rounded-full border-2 transition-all ${selectedColor === i ? 'border-neutral-900 ring-2 ring-neutral-900/10' : 'border-neutral-200'}`}
+                      key={color.slug}
+                      onClick={() => { setSelectedColor(color.slug); setAddError(''); }}
+                      className={`relative w-9 h-9 rounded-full border-2 transition-all ${selectedColor === color.slug ? 'border-neutral-900 ring-2 ring-neutral-900/10' : 'border-neutral-200'}`}
                       style={{ backgroundColor: color.hex }}
-                      title={localized(color, locale)}
-                      aria-label={localized(color, locale)}
+                      title={color.name}
+                      aria-label={color.name}
                     >
-                      {selectedColor === i && (
+                      {selectedColor === color.slug && (
                         <Check
                           size={14}
                           className="absolute inset-0 m-auto text-white mix-blend-difference"
@@ -156,9 +172,7 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
                     </button>
                   ))}
                 </div>
-                <p className="text-[12px] text-neutral-400 mt-2">
-                  {localized(product.colors[selectedColor], locale)}
-                </p>
+                <p className="text-[12px] text-neutral-400 mt-2">{colorName}</p>
               </div>
             )}
 
@@ -171,18 +185,31 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
                   </label>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {product.sizes.map(size => (
-                    <button
-                      key={size}
-                      onClick={() => { setSelectedSize(size); setSizeError(false); }}
-                      className={`min-w-[48px] px-4 py-2.5 text-[13px] font-medium border transition-all ${selectedSize === size ? 'border-neutral-900 bg-neutral-900 text-white' : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'}`}
-                    >
-                      {size}
-                    </button>
-                  ))}
+                  {product.sizes.map(size => {
+                    const soldOut = sizeStock(size) <= 0;
+                    return (
+                      <button
+                        key={size}
+                        disabled={soldOut}
+                        onClick={() => { setSelectedSize(size); setSizeError(false); setAddError(''); }}
+                        className={`min-w-[48px] px-4 py-2.5 text-[13px] font-medium border transition-all ${
+                          soldOut
+                            ? 'border-neutral-100 text-neutral-300 line-through cursor-not-allowed'
+                            : selectedSize === size
+                              ? 'border-neutral-900 bg-neutral-900 text-white'
+                              : 'border-neutral-200 text-neutral-700 hover:border-neutral-400'
+                        }`}
+                      >
+                        {size}
+                      </button>
+                    );
+                  })}
                 </div>
                 {sizeError && (
                   <p className="text-[12px] text-red-500 mt-2">{t('detail_select_size')}</p>
+                )}
+                {variant && available > 0 && available <= LOW_STOCK && (
+                  <p className="text-[12px] text-amber-700 mt-2">{t('detail_low_stock', { n: available })}</p>
                 )}
               </div>
             )}
@@ -201,7 +228,7 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
                 </button>
                 <span className="w-12 text-center text-[14px] font-medium">{quantity}</span>
                 <button
-                  onClick={() => setQuantity(q => q + 1)}
+                  onClick={() => setQuantity(q => (variant ? Math.min(Math.max(available, 1), q + 1) : q + 1))}
                   className="w-10 h-10 flex items-center justify-center text-neutral-600 hover:text-neutral-900 transition-colors"
                 >
                   <Plus size={14} />
@@ -210,26 +237,43 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
             </div>
 
             {/* Add to cart */}
-            <button
-              onClick={handleAddToCart}
-              className={`w-full py-4 text-[13px] tracking-[0.15em] uppercase font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
-                added ? 'bg-green-700 text-white' : 'bg-neutral-900 text-white hover:bg-neutral-800'
-              }`}
-            >
-              {added ? (
-                <>
-                  <Check size={16} />
-                  {t('detail_added')}
-                </>
-              ) : (
-                <>
-                  <ShoppingBag size={16} strokeWidth={1.5} />
-                  {t('detail_add_cart')}
-                </>
-              )}
-            </button>
+            {!product.isAvailable ? (
+              <button disabled className="w-full py-4 text-[13px] tracking-[0.15em] uppercase font-medium bg-neutral-200 text-neutral-500 cursor-not-allowed">
+                {t('product_sold_out')}
+              </button>
+            ) : (
+              <button
+                onClick={handleAddToCart}
+                disabled={adding}
+                className={`w-full py-4 text-[13px] tracking-[0.15em] uppercase font-medium transition-all duration-300 flex items-center justify-center gap-2 ${
+                  added ? 'bg-green-700 text-white' : 'bg-neutral-900 text-white hover:bg-neutral-800'
+                } ${adding ? 'opacity-70' : ''}`}
+              >
+                {adding ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    {t('detail_adding')}
+                  </>
+                ) : added ? (
+                  <>
+                    <Check size={16} />
+                    {t('detail_added')}
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag size={16} strokeWidth={1.5} />
+                    {t('detail_add_cart')}
+                  </>
+                )}
+              </button>
+            )}
+            {addError && <p className="text-[12px] text-red-500 mt-3 text-center">{addError}</p>}
 
-            <p className="text-[12px] text-neutral-400 mt-4 text-center">{t('free_ship_note')}</p>
+            {threshold != null && price && (
+              <p className="text-[12px] text-neutral-400 mt-4 text-center">
+                {freeShippingNote(threshold, price.currency, locale)}
+              </p>
+            )}
           </div>
         </div>
 
@@ -241,7 +285,7 @@ export function ProductDetailPage({ product, categories, products, navigate }: P
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
               {related.map(p => (
-                <ProductCard key={p.id} product={p} navigate={navigate} />
+                <ProductCard key={p.id} product={p} />
               ))}
             </div>
           </div>

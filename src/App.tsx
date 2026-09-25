@@ -1,56 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
-import { I18nProvider } from '@/i18n/I18nContext';
+import { useEffect } from 'react';
+import { I18nProvider, useI18n } from '@/i18n/I18nContext';
 import { CartProvider } from '@/context/CartContext';
+import { StoreProvider, useStore } from '@/context/StoreContext';
+import { NavProvider, useNav } from '@/context/NavContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import { HomePage } from '@/pages/HomePage';
 import { ShopPage } from '@/pages/ShopPage';
 import { ProductDetailPage } from '@/pages/ProductDetailPage';
 import { CartPage } from '@/pages/CartPage';
+import { CheckoutPage } from '@/pages/CheckoutPage';
+import { OrderPage } from '@/pages/OrderPage';
 import { AboutPage } from '@/pages/AboutPage';
-import { supabase } from '@/lib/supabase';
-import { useRouter } from '@/lib/router';
-import type { Category, Product } from '@/types';
-import { useI18n } from '@/i18n/I18nContext';
-import { tr } from '@/i18n/translations';
+import { ContentPage } from '@/pages/ContentPage';
+import { NotFoundPage } from '@/pages/NotFoundPage';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
-  const { locale } = useI18n();
-  const { route, navigate } = useRouter();
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    try {
-      const [catRes, prodRes] = await Promise.all([
-        supabase.from('categories').select('*').order('sort_order'),
-        supabase.from('products').select('*').order('sort_order'),
-      ]);
-      if (catRes.error) throw catRes.error;
-      if (prodRes.error) throw prodRes.error;
-      setCategories(catRes.data as Category[]);
-      setProducts(prodRes.data as Product[]);
-    } catch {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { t } = useI18n();
+  const { route } = useNav();
+  const { store, loading, error, reload } = useStore();
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (store) document.title = store.site.tagline ? `${store.site.brandName} — ${store.site.tagline}` : store.site.brandName;
+  }, [store]);
 
-  const currentProduct = route.name === 'product'
-    ? products.find(p => p.slug === route.slug)
-    : undefined;
-
-  if (loading) {
+  // 首次加载显示 loading；切换语言/币种时保留旧内容，避免闪屏
+  if (!store && loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <Loader2 size={24} className="animate-spin text-neutral-400" />
@@ -58,16 +34,13 @@ function AppContent() {
     );
   }
 
-  if (error) {
+  if (!store || error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
-          <p className="text-neutral-400 text-lg mb-4">{tr('error_load', locale)}</p>
-          <button
-            onClick={fetchData}
-            className="text-neutral-900 underline text-sm"
-          >
-            {tr('loading', locale)}
+          <p className="text-neutral-400 text-lg mb-4">{t('error_load')}</p>
+          <button onClick={reload} className="text-neutral-900 underline text-sm">
+            {t('retry')}
           </button>
         </div>
       </div>
@@ -76,15 +49,19 @@ function AppContent() {
 
   return (
     <div className="flex flex-col min-h-screen bg-white">
-      <Navbar categories={categories} navigate={navigate} route={route} />
+      <Navbar />
       <main className="flex-1">
-        {route.name === 'home' && <HomePage categories={categories} products={products} navigate={navigate} />}
-        {route.name === 'shop' && <ShopPage categories={categories} products={products} navigate={navigate} initialCategory={route.category} />}
-        {route.name === 'product' && <ProductDetailPage product={currentProduct} categories={categories} products={products} navigate={navigate} />}
-        {route.name === 'cart' && <CartPage products={products} navigate={navigate} />}
-        {route.name === 'about' && <AboutPage navigate={navigate} />}
+        {route.name === 'home' && <HomePage />}
+        {route.name === 'shop' && <ShopPage key={route.category ?? 'all'} category={route.category} />}
+        {route.name === 'product' && <ProductDetailPage slug={route.slug} />}
+        {route.name === 'cart' && <CartPage />}
+        {route.name === 'checkout' && <CheckoutPage />}
+        {route.name === 'order' && <OrderPage />}
+        {route.name === 'about' && <AboutPage />}
+        {route.name === 'page' && <ContentPage slug={route.slug} />}
+        {route.name === 'notFound' && <NotFoundPage />}
       </main>
-      <Footer categories={categories} navigate={navigate} />
+      <Footer />
     </div>
   );
 }
@@ -92,9 +69,13 @@ function AppContent() {
 function App() {
   return (
     <I18nProvider>
-      <CartProvider>
-        <AppContent />
-      </CartProvider>
+      <NavProvider>
+        <StoreProvider>
+          <CartProvider>
+            <AppContent />
+          </CartProvider>
+        </StoreProvider>
+      </NavProvider>
     </I18nProvider>
   );
 }

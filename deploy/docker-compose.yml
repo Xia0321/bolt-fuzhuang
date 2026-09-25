@@ -1,0 +1,87 @@
+# 应用服务：Saleor API/Worker + PostgreSQL + Redis
+# 反向代理与 HTTPS 由宿主机上的 Nginx + Certbot 负责（配置见 deploy/nginx/）。
+# API 只监听 127.0.0.1:8000，数据库和 Redis 不暴露任何端口。
+# 所有服务 restart: unless-stopped，配合 Docker 开机自启，服务器重启后会自动恢复。
+
+x-saleor: &saleor
+  image: ghcr.io/saleor/saleor:${SALEOR_VERSION:-3.23.36}
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgres://saleor:${POSTGRES_PASSWORD}@db:5432/saleor
+    CELERY_BROKER_URL: redis://redis:6379/1
+    CACHE_URL: redis://redis:6379/0
+    DEBUG: "False"
+  volumes:
+    # 上传的图片放在宿主机目录，由宿主机 Nginx 直接提供
+    - ./media:/app/media
+    - ./secrets/jwt.pem:/run/secrets/jwt.pem:ro
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: saleor
+      POSTGRES_DB: saleor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saleor"]
+      interval: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 20
+
+  # 一次性任务：执行数据库迁移，成功后 API 才会启动。每次 docker compose up 都会重新执行（已迁移则秒过）
+  migrate:
+    <<: *saleor
+    restart: "no"
+    command: >
+      sh -c 'export RSA_PRIVATE_KEY="$$(cat /run/secrets/jwt.pem)" &&
+             python3 manage.py migrate --no-input'
+
+  api:
+    <<: *saleor
+    # JWT 签名密钥以文件方式挂载，启动时读入环境变量，避免在 .env 中处理多行文本
+    command: >
+      sh -c 'export RSA_PRIVATE_KEY="$$(cat /run/secrets/jwt.pem)" &&
+             exec uvicorn saleor.asgi:application --host=0.0.0.0 --port=8000 --workers=2
+             --lifespan=auto --ws=none --no-server-header --no-access-log --timeout-keep-alive=35
+             --proxy-headers --forwarded-allow-ips=*'
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')"]
+      interval: 10s
+      start_period: 120s
+      retries: 10
+
+  worker:
+    <<: *saleor
+    # -B 内嵌定时任务（订单过期、清理过期结账等），单机部署足够
+    command: >
+      sh -c 'export RSA_PRIVATE_KEY="$$(cat /run/secrets/jwt.pem)" &&
+             exec celery --app saleor.celeryconf:app worker -B -E --concurrency=1 --loglevel=info'
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:

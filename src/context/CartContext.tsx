@@ -1,80 +1,102 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import type { CartItem, Locale } from '@/types';
-import { localized } from '@/i18n/translations';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useI18n } from '@/i18n/I18nContext';
+import {
+  addCheckoutLine, createCheckout, fetchCheckout, removeCheckoutLine, updateCheckoutLine,
+} from '@/lib/checkout';
+import type { Checkout } from '@/types';
 
 interface CartContextValue {
-  items: CartItem[];
-  addItem: (item: CartItem) => void;
-  removeItem: (productId: string, size: string, colorIndex: number) => void;
-  updateQuantity: (productId: string, size: string, colorIndex: number, quantity: number) => void;
-  clearCart: () => void;
+  checkout: Checkout | null;
+  loading: boolean;
   totalItems: number;
-  subtotal: number;
-  getItemKey: (productId: string, size: string, colorIndex: number) => string;
+  addItem: (variantId: string, quantity: number) => Promise<void>;
+  updateQuantity: (lineId: string, quantity: number) => Promise<void>;
+  removeItem: (lineId: string) => Promise<void>;
+  // 结算页更新地址、配送方式后回写
+  setCheckout: (checkout: Checkout) => void;
+  // 下单成功后清空
+  clearCart: () => void;
 }
 
 const CartContext = createContext<CartContextValue | null>(null);
 
-const STORAGE_KEY = 'app-cart';
+// 每个渠道（币种）各自一个 Saleor Checkout
+const storageKey = (channel: string) => `checkout:${channel}`;
 
-function loadCart(): CartItem[] {
-  if (typeof window === 'undefined') return [];
+function readId(channel: string): string | null {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return localStorage.getItem(storageKey(channel));
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function getItemKey(productId: string, size: string, colorIndex: number): string {
-  return `${productId}__${size}__${colorIndex}`;
+function writeId(channel: string, id: string | null) {
+  try {
+    if (id) localStorage.setItem(storageKey(channel), id);
+    else localStorage.removeItem(storageKey(channel));
+  } catch {
+    // 忽略存储失败
+  }
 }
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>(loadCart);
+  const { channel, languageCode } = useI18n();
+  const [checkout, setCheckoutState] = useState<Checkout | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-  }, [items]);
+    let cancelled = false;
+    const id = readId(channel);
+    setCheckoutState(null);
+    if (!id) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    fetchCheckout(id, languageCode)
+      .then(c => {
+        if (cancelled) return;
+        // 已下单或过期的 checkout 会查不到
+        if (!c) writeId(channel, null);
+        setCheckoutState(c);
+      })
+      .catch(() => { if (!cancelled) setCheckoutState(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [channel, languageCode]);
 
-  const addItem = (item: CartItem) => {
-    setItems(prev => {
-      const key = getItemKey(item.productId, item.size, item.colorIndex);
-      const existing = prev.find(i => getItemKey(i.productId, i.size, i.colorIndex) === key);
-      if (existing) {
-        return prev.map(i =>
-          getItemKey(i.productId, i.size, i.colorIndex) === key
-            ? { ...i, quantity: i.quantity + item.quantity }
-            : i
-        );
-      }
-      return [...prev, item];
-    });
-  };
+  const setCheckout = useCallback((c: Checkout) => {
+    writeId(channel, c.id);
+    setCheckoutState(c);
+  }, [channel]);
 
-  const removeItem = (productId: string, size: string, colorIndex: number) => {
-    const key = getItemKey(productId, size, colorIndex);
-    setItems(prev => prev.filter(i => getItemKey(i.productId, i.size, i.colorIndex) !== key));
-  };
+  const addItem = useCallback(async (variantId: string, quantity: number) => {
+    const c = checkout
+      ? await addCheckoutLine(checkout.id, languageCode, variantId, quantity)
+      : await createCheckout(channel, languageCode, variantId, quantity);
+    setCheckout(c);
+  }, [checkout, channel, languageCode, setCheckout]);
 
-  const updateQuantity = (productId: string, size: string, colorIndex: number, quantity: number) => {
-    if (quantity < 1) return;
-    const key = getItemKey(productId, size, colorIndex);
-    setItems(prev => prev.map(i =>
-      getItemKey(i.productId, i.size, i.colorIndex) === key
-        ? { ...i, quantity }
-        : i
-    ));
-  };
+  const updateQuantity = useCallback(async (lineId: string, quantity: number) => {
+    if (!checkout || quantity < 1) return;
+    setCheckout(await updateCheckoutLine(checkout.id, languageCode, lineId, quantity));
+  }, [checkout, languageCode, setCheckout]);
 
-  const clearCart = () => setItems([]);
+  const removeItem = useCallback(async (lineId: string) => {
+    if (!checkout) return;
+    setCheckout(await removeCheckoutLine(checkout.id, languageCode, lineId));
+  }, [checkout, languageCode, setCheckout]);
 
-  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
-  const subtotal = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const clearCart = useCallback(() => {
+    writeId(channel, null);
+    setCheckoutState(null);
+  }, [channel]);
+
+  const totalItems = checkout ? checkout.lines.reduce((sum, l) => sum + l.quantity, 0) : 0;
 
   return (
-    <CartContext.Provider value={{ items, addItem, removeItem, updateQuantity, clearCart, totalItems, subtotal, getItemKey }}>
+    <CartContext.Provider value={{ checkout, loading, totalItems, addItem, updateQuantity, removeItem, setCheckout, clearCart }}>
       {children}
     </CartContext.Provider>
   );
@@ -84,8 +106,4 @@ export function useCart() {
   const ctx = useContext(CartContext);
   if (!ctx) throw new Error('useCart must be used within CartProvider');
   return ctx;
-}
-
-export function cartItemName(item: CartItem, locale: Locale): string {
-  return localized(item.name, locale);
 }

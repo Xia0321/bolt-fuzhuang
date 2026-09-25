@@ -1,21 +1,22 @@
 import { useState, useEffect } from 'react';
-import { ShoppingBag, Menu, X, Search } from 'lucide-react';
+import { ShoppingBag, Menu, X } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useCart } from '@/context/CartContext';
+import { useStore } from '@/context/StoreContext';
+import { useNav } from '@/context/NavContext';
 import { locales, localeLabels } from '@/i18n/translations';
-import type { Locale, Category } from '@/types';
-import { localized } from '@/i18n/translations';
-import type { Route } from '@/lib/router';
+import { CHANNELS } from '@/config';
+import { routeToPath } from '@/lib/router';
+import type { MenuLink } from '@/types';
 
-interface NavbarProps {
-  categories: Category[];
-  navigate: (r: Route) => void;
-  route: Route;
-}
-
-export function Navbar({ categories, navigate, route }: NavbarProps) {
-  const { locale, setLocale, t } = useI18n();
+export function Navbar() {
+  const { locale, setLocale, channel, setChannel, t } = useI18n();
   const { totalItems } = useCart();
+  const { store } = useStore();
+  const { route, navigate, navigateUrl } = useNav();
+  const links = store?.navbar ?? [];
+  const brandName = store?.site.brandName ?? '';
+  const currentChannel = CHANNELS.find(c => c.slug === channel);
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [localeOpen, setLocaleOpen] = useState(false);
@@ -46,19 +47,15 @@ export function Navbar({ categories, navigate, route }: NavbarProps) {
     ? 'text-neutral-900'
     : 'text-white';
 
-  const isActive = (catSlug?: string) => {
-    if (route.name === 'shop' && !catSlug && !route.category) return true;
-    if (route.name === 'shop' && catSlug && route.category === catSlug) return true;
-    return false;
-  };
+  const currentPath = routeToPath(route);
 
-  const navLink = (key: string, r: Route, catSlug?: string) => (
+  const navLink = (key: string, label: string, url: string) => (
     <button
       key={key}
-      onClick={() => navigate(r)}
-      className={`text-[13px] tracking-wide uppercase font-medium transition-colors duration-200 relative py-1 ${linkClass} ${isActive(catSlug) ? 'after:content-[""] after:absolute after:bottom-0 after:left-0 after:w-full after:h-px after:bg-current' : ''}`}
+      onClick={() => navigateUrl(url)}
+      className={`text-[13px] tracking-wide uppercase font-medium transition-colors duration-200 relative py-1 ${linkClass} ${currentPath === url ? 'after:content-[""] after:absolute after:bottom-0 after:left-0 after:w-full after:h-px after:bg-current' : ''}`}
     >
-      {t(key)}
+      {label}
     </button>
   );
 
@@ -77,15 +74,15 @@ export function Navbar({ categories, navigate, route }: NavbarProps) {
                 <Menu size={22} />
               </button>
               <nav className="hidden md:flex items-center gap-6">
-                {navLink('nav_shop', { name: 'shop' })}
-                {categories.map(cat => navLink(`nav_${cat.slug}`, { name: 'shop', category: cat.slug }, cat.slug))}
+                {navLink('shop', t('nav_shop'), '/shop')}
+                {links.map((link: MenuLink) => navLink(link.id, link.name, link.url))}
               </nav>
             </div>
 
             {/* Center: logo */}
             <button onClick={() => navigate({ name: 'home' })} className="flex items-center justify-center flex-shrink-0">
               <span className={`text-xl md:text-2xl font-light tracking-[0.3em] uppercase ${logoClass} transition-colors duration-300`}>
-                Maison
+                {brandName}
               </span>
             </button>
 
@@ -96,20 +93,32 @@ export function Navbar({ categories, navigate, route }: NavbarProps) {
                   className={`text-[13px] tracking-wide font-medium flex items-center gap-1 transition-colors ${linkClass}`}
                   onClick={() => setLocaleOpen(!localeOpen)}
                 >
-                  {localeLabels[locale]}
+                  {localeLabels[locale]} · {currentChannel?.currency}
                   <span className="text-[10px]">▾</span>
                 </button>
                 {localeOpen && (
                   <>
                     <div className="fixed inset-0 z-10" onClick={() => setLocaleOpen(false)} />
-                    <div className="absolute right-0 top-full mt-2 bg-white shadow-lg rounded-sm border border-neutral-100 py-2 z-20 min-w-[100px]">
+                    <div className="absolute right-0 top-full mt-2 bg-white shadow-lg rounded-sm border border-neutral-100 py-2 z-20 min-w-[140px]">
+                      <p className="px-4 pt-1 pb-1.5 text-[10px] tracking-[0.15em] uppercase text-neutral-400">{t('nav_language')}</p>
                       {locales.map(l => (
                         <button
                           key={l}
-                          onClick={() => { setLocale(l as Locale); setLocaleOpen(false); }}
+                          onClick={() => { setLocale(l); setLocaleOpen(false); }}
                           className={`block w-full text-left px-4 py-1.5 text-[13px] transition-colors hover:bg-neutral-50 ${locale === l ? 'text-neutral-900 font-medium' : 'text-neutral-500'}`}
                         >
                           {localeLabels[l]}
+                        </button>
+                      ))}
+                      <div className="my-2 border-t border-neutral-100" />
+                      <p className="px-4 pt-1 pb-1.5 text-[10px] tracking-[0.15em] uppercase text-neutral-400">{t('nav_currency')}</p>
+                      {CHANNELS.map(c => (
+                        <button
+                          key={c.slug}
+                          onClick={() => { setChannel(c.slug); setLocaleOpen(false); }}
+                          className={`block w-full text-left px-4 py-1.5 text-[13px] transition-colors hover:bg-neutral-50 ${channel === c.slug ? 'text-neutral-900 font-medium' : 'text-neutral-500'}`}
+                        >
+                          {c.label}
                         </button>
                       ))}
                     </div>
@@ -139,7 +148,7 @@ export function Navbar({ categories, navigate, route }: NavbarProps) {
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[280px] bg-white flex flex-col">
             <div className="flex items-center justify-between px-6 h-16 border-b border-neutral-100">
-              <span className="text-lg font-light tracking-[0.2em] uppercase">Maison</span>
+              <span className="text-lg font-light tracking-[0.2em] uppercase">{brandName}</span>
               <button onClick={() => setMobileOpen(false)}><X size={22} /></button>
             </div>
             <nav className="flex flex-col py-4">
@@ -149,28 +158,41 @@ export function Navbar({ categories, navigate, route }: NavbarProps) {
               <button onClick={() => navigate({ name: 'shop' })} className="text-left px-6 py-3 text-[15px] tracking-wide hover:bg-neutral-50">
                 {t('nav_shop')}
               </button>
-              {categories.map(cat => (
+              {links.map(link => (
                 <button
-                  key={cat.id}
-                  onClick={() => navigate({ name: 'shop', category: cat.slug })}
+                  key={link.id}
+                  onClick={() => navigateUrl(link.url)}
                   className="text-left px-6 py-3 text-[15px] tracking-wide hover:bg-neutral-50 text-neutral-600 pl-12"
                 >
-                  {localized(cat.name, locale)}
+                  {link.name}
                 </button>
               ))}
-              <button onClick={() => navigate({ name: 'about' })} className="text-left px-6 py-3 text-[15px] tracking-wide hover:bg-neutral-50">
-                {t('nav_about')}
-              </button>
+              {(store?.footer ?? []).map(link => (
+                <button key={link.id} onClick={() => navigateUrl(link.url)} className="text-left px-6 py-3 text-[15px] tracking-wide hover:bg-neutral-50">
+                  {link.name}
+                </button>
+              ))}
             </nav>
-            <div className="mt-auto px-6 py-6 border-t border-neutral-100">
+            <div className="mt-auto px-6 py-6 border-t border-neutral-100 space-y-4">
               <div className="flex gap-4">
                 {locales.map(l => (
                   <button
                     key={l}
-                    onClick={() => setLocale(l as Locale)}
+                    onClick={() => setLocale(l)}
                     className={`text-[14px] ${locale === l ? 'text-neutral-900 font-medium' : 'text-neutral-400'}`}
                   >
                     {localeLabels[l]}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-4">
+                {CHANNELS.map(c => (
+                  <button
+                    key={c.slug}
+                    onClick={() => setChannel(c.slug)}
+                    className={`text-[13px] ${channel === c.slug ? 'text-neutral-900 font-medium' : 'text-neutral-400'}`}
+                  >
+                    {c.currency}
                   </button>
                 ))}
               </div>

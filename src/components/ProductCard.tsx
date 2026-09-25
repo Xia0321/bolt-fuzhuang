@@ -1,23 +1,19 @@
 import { useI18n } from '@/i18n/I18nContext';
-import { localized, formatPrice } from '@/i18n/translations';
+import { useNav } from '@/context/NavContext';
+import { formatPrice } from '@/i18n/translations';
 import type { Product } from '@/types';
-import type { Route } from '@/lib/router';
 import { ShoppingBag } from 'lucide-react';
 
-interface ProductCardProps {
-  product: Product;
-  navigate: (r: Route) => void;
-}
-
-export function ProductCard({ product, navigate }: ProductCardProps) {
+export function ProductCard({ product }: { product: Product }) {
   const { locale, t } = useI18n();
+  const { navigate } = useNav();
 
   return (
     <div className="group cursor-pointer" onClick={() => navigate({ name: 'product', slug: product.slug })}>
       <div className="relative aspect-[3/4] overflow-hidden bg-neutral-100 mb-3">
         <img
           src={product.images[0]}
-          alt={localized(product.name, locale)}
+          alt={product.name}
           className="w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
           loading="lazy"
         />
@@ -25,7 +21,7 @@ export function ProductCard({ product, navigate }: ProductCardProps) {
         {product.images[1] && (
           <img
             src={product.images[1]}
-            alt={localized(product.name, locale)}
+            alt={product.name}
             className="absolute inset-0 w-full h-full object-cover opacity-0 group-hover:opacity-100 transition-opacity duration-500"
             loading="lazy"
           />
@@ -37,7 +33,11 @@ export function ProductCard({ product, navigate }: ProductCardProps) {
             {t('product_view')}
           </div>
         </div>
-        {product.featured && (
+        {!product.isAvailable ? (
+          <span className="absolute top-3 left-3 bg-neutral-900/80 backdrop-blur-sm text-white text-[10px] tracking-[0.1em] uppercase px-2.5 py-1 font-medium">
+            {t('product_sold_out')}
+          </span>
+        ) : product.featured && (
           <span className="absolute top-3 left-3 bg-white/90 backdrop-blur-sm text-neutral-900 text-[10px] tracking-[0.1em] uppercase px-2.5 py-1 font-medium">
             {t('product_new')}
           </span>
@@ -45,7 +45,7 @@ export function ProductCard({ product, navigate }: ProductCardProps) {
       </div>
       <div className="space-y-1">
         <h3 className="text-[14px] font-medium text-neutral-900 leading-snug line-clamp-2">
-          {localized(product.name, locale)}
+          {product.name}
         </h3>
         <p className="text-[13px] text-neutral-500">
           {formatPrice(product.price, locale)}

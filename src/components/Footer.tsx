@@ -1,16 +1,14 @@
 import { Instagram, Mail } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nContext';
-import { localized } from '@/i18n/translations';
-import type { Category } from '@/types';
-import type { Route } from '@/lib/router';
+import { useStore } from '@/context/StoreContext';
+import { useNav } from '@/context/NavContext';
 
-interface FooterProps {
-  categories: Category[];
-  navigate: (r: Route) => void;
-}
-
-export function Footer({ categories, navigate }: FooterProps) {
-  const { locale, t } = useI18n();
+export function Footer() {
+  const { t } = useI18n();
+  const { store } = useStore();
+  const { navigate, navigateUrl } = useNav();
+  if (!store) return null;
+  const { site, navbar, footer, footerLegal } = store;
 
   return (
     <footer className="bg-neutral-950 text-neutral-400 mt-auto">
@@ -18,17 +16,21 @@ export function Footer({ categories, navigate }: FooterProps) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
           {/* Brand */}
           <div className="col-span-2 md:col-span-1">
-            <h3 className="text-white text-xl font-light tracking-[0.25em] uppercase mb-4">Maison</h3>
+            <h3 className="text-white text-xl font-light tracking-[0.25em] uppercase mb-4">{site.brandName}</h3>
             <p className="text-[13px] leading-relaxed text-neutral-500 max-w-xs">
-              {t('footer_tagline')}
+              {site.tagline}
             </p>
             <div className="flex gap-4 mt-6">
-              <a href="#" className="text-neutral-500 hover:text-white transition-colors" aria-label="Instagram">
-                <Instagram size={18} />
-              </a>
-              <a href="#" className="text-neutral-500 hover:text-white transition-colors" aria-label="Email">
-                <Mail size={18} />
-              </a>
+              {site.instagramUrl && (
+                <a href={site.instagramUrl} target="_blank" rel="noopener noreferrer" className="text-neutral-500 hover:text-white transition-colors" aria-label="Instagram">
+                  <Instagram size={18} />
+                </a>
+              )}
+              {site.contactEmail && (
+                <a href={`mailto:${site.contactEmail}`} className="text-neutral-500 hover:text-white transition-colors" aria-label="Email">
+                  <Mail size={18} />
+                </a>
+              )}
             </div>
           </div>
 
@@ -41,13 +43,10 @@ export function Footer({ categories, navigate }: FooterProps) {
                   {t('nav_shop')}
                 </button>
               </li>
-              {categories.map(cat => (
-                <li key={cat.id}>
-                  <button
-                    onClick={() => navigate({ name: 'shop', category: cat.slug })}
-                    className="text-[13px] hover:text-white transition-colors"
-                  >
-                    {localized(cat.name, locale)}
+              {navbar.map(link => (
+                <li key={link.id}>
+                  <button onClick={() => navigateUrl(link.url)} className="text-[13px] hover:text-white transition-colors">
+                    {link.name}
                   </button>
                 </li>
               ))}
@@ -58,9 +57,13 @@ export function Footer({ categories, navigate }: FooterProps) {
           <div>
             <h4 className="text-white text-[12px] tracking-[0.15em] uppercase mb-4 font-medium">{t('footer_about')}</h4>
             <ul className="space-y-2.5">
-              <li><button onClick={() => navigate({ name: 'about' })} className="text-[13px] hover:text-white transition-colors">{t('nav_about')}</button></li>
-              <li><a href="#" className="text-[13px] hover:text-white transition-colors">{t('footer_shipping')}</a></li>
-              <li><a href="#" className="text-[13px] hover:text-white transition-colors">{t('footer_returns')}</a></li>
+              {footer.map(link => (
+                <li key={link.id}>
+                  <button onClick={() => navigateUrl(link.url)} className="text-[13px] hover:text-white transition-colors">
+                    {link.name}
+                  </button>
+                </li>
+              ))}
             </ul>
           </div>
 
@@ -68,18 +71,23 @@ export function Footer({ categories, navigate }: FooterProps) {
           <div>
             <h4 className="text-white text-[12px] tracking-[0.15em] uppercase mb-4 font-medium">{t('footer_contact')}</h4>
             <ul className="space-y-2.5">
-              <li><a href="mailto:hello@maison.com" className="text-[13px] hover:text-white transition-colors">hello@maison.com</a></li>
-              <li><span className="text-[13px] text-neutral-500">+86 21 0000 0000</span></li>
-              <li><span className="text-[13px] text-neutral-500">Shanghai · Paris · Tokyo</span></li>
+              {site.contactEmail && (
+                <li><a href={`mailto:${site.contactEmail}`} className="text-[13px] hover:text-white transition-colors">{site.contactEmail}</a></li>
+              )}
+              {site.contactPhone && <li><span className="text-[13px] text-neutral-500">{site.contactPhone}</span></li>}
+              {site.contactAddress && <li><span className="text-[13px] text-neutral-500">{site.contactAddress}</span></li>}
             </ul>
           </div>
         </div>
 
         <div className="border-t border-neutral-800 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
-          <p className="text-[12px] text-neutral-600">© 2026 Maison. {t('footer_rights')}</p>
+          <p className="text-[12px] text-neutral-600">© {new Date().getFullYear()} {site.brandName}. {t('footer_rights')}</p>
           <div className="flex gap-6">
-            <a href="#" className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors">{t('footer_privacy')}</a>
-            <a href="#" className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors">{t('footer_terms')}</a>
+            {footerLegal.map(link => (
+              <button key={link.id} onClick={() => navigateUrl(link.url)} className="text-[12px] text-neutral-600 hover:text-neutral-400 transition-colors">
+                {link.name}
+              </button>
+            ))}
           </div>
         </div>
       </div>
