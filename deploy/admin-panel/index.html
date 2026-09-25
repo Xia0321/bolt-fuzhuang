@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>运营工具 · PINSO 后台</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #f4f5f7;
+      color: #28234a;
+      min-height: 100vh;
+    }
+    /* 顶栏与侧边栏模拟 Saleor Dashboard 布局 */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 56px;
+      background: #fff; border-bottom: 1px solid #e8e8e8;
+      display: flex; align-items: center; padding: 0 24px;
+      z-index: 100;
+    }
+    .topbar-brand {
+      font-size: 18px; font-weight: 700; letter-spacing: 0.08em;
+      color: #28234a; text-decoration: none;
+    }
+    .topbar-brand span { color: #5b67d8; }
+    .topbar-back {
+      margin-left: auto; display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: #6d7175; text-decoration: none;
+      padding: 6px 12px; border-radius: 4px; transition: background .15s;
+    }
+    .topbar-back:hover { background: #f4f5f7; color: #28234a; }
+
+    .layout { display: flex; padding-top: 56px; min-height: 100vh; }
+
+    .sidebar {
+      width: 220px; background: #fff; border-right: 1px solid #e8e8e8;
+      padding: 20px 0; flex-shrink: 0; position: fixed; top: 56px; bottom: 0;
+      overflow-y: auto;
+    }
+    .sidebar-section { padding: 0 12px 8px; }
+    .sidebar-title {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      color: #a3a3a3; text-transform: uppercase; padding: 12px 12px 6px;
+    }
+    .sidebar-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; border-radius: 6px; cursor: pointer;
+      color: #6d7175; transition: background .15s, color .15s; font-size: 13px;
+    }
+    .sidebar-item:hover { background: #f4f5f7; color: #28234a; }
+    .sidebar-item.active { background: #eceef9; color: #5b67d8; font-weight: 500; }
+    .sidebar-icon { width: 16px; height: 16px; flex-shrink: 0; opacity: .7; }
+    .sidebar-item.active .sidebar-icon { opacity: 1; }
+
+    .main { margin-left: 220px; padding: 32px; flex: 1; }
+
+    .page-title {
+      font-size: 24px; font-weight: 600; margin-bottom: 8px; color: #28234a;
+    }
+    .page-desc { color: #6d7175; margin-bottom: 28px; font-size: 13px; line-height: 1.6; }
+
+    .card {
+      background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+      padding: 24px; margin-bottom: 16px; max-width: 680px;
+    }
+    .card-title {
+      font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #28234a;
+    }
+    .card-desc { font-size: 12px; color: #6d7175; margin-bottom: 20px; line-height: 1.5; }
+
+    /* 开关组件 */
+    .toggle-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0; border-bottom: 1px solid #f0f0f0;
+    }
+    .toggle-row:last-of-type { border-bottom: none; }
+    .toggle-label { font-size: 13px; color: #28234a; }
+    .toggle-hint { font-size: 11px; color: #a3a3a3; margin-top: 2px; }
+    .toggle {
+      position: relative; width: 44px; height: 24px; flex-shrink: 0;
+    }
+    .toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+    .toggle-track {
+      position: absolute; inset: 0; border-radius: 12px; cursor: pointer;
+      background: #d4d4d4; transition: background .2s;
+    }
+    .toggle input:checked ~ .toggle-track { background: #5b67d8; }
+    .toggle-thumb {
+      position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+      background: #fff; border-radius: 50%; transition: transform .2s;
+      pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
+    .toggle-track, .toggle-thumb { pointer-events: none; }
+    .toggle { cursor: pointer; }
+    .toggle input { position: absolute; inset: 0; opacity: 0; cursor: pointer; z-index: 1; width: 100%; height: 100%; }
+
+    /* 状态徽章 */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 500;
+    }
+    .badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+    .badge-on { background: #e6f6ec; color: #1a7f37; }
+    .badge-on .badge-dot { background: #2da44e; }
+    .badge-off { background: #f4f5f7; color: #6d7175; }
+    .badge-off .badge-dot { background: #a3a3a3; }
+    .badge-warn { background: #fff8e6; color: #9a6700; }
+    .badge-warn .badge-dot { background: #d4a017; }
+
+    /* 认证区 */
+    .auth-card {
+      background: #fff; border: 1px solid #e8e8e8; border-radius: 8px;
+      padding: 24px; max-width: 400px; margin: 80px auto;
+    }
+    .auth-card h2 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .auth-card p { font-size: 13px; color: #6d7175; margin-bottom: 20px; }
+    .input-row { margin-bottom: 14px; }
+    .input-row label { display: block; font-size: 12px; color: #6d7175; margin-bottom: 5px; font-weight: 500; }
+    .input-row input {
+      width: 100%; padding: 9px 12px; border: 1px solid #d4d4d4; border-radius: 6px;
+      font-size: 13px; color: #28234a; outline: none; transition: border-color .15s;
+    }
+    .input-row input:focus { border-color: #5b67d8; }
+
+    .btn-primary {
+      width: 100%; padding: 10px; background: #5b67d8; color: #fff;
+      border: none; border-radius: 6px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background .15s;
+    }
+    .btn-primary:hover { background: #4a57c8; }
+    .btn-primary:disabled { background: #c5c9f0; cursor: not-allowed; }
+
+    .error-note {
+      background: #fff0f0; border: 1px solid #ffd0d0; color: #c0392b;
+      padding: 10px 14px; border-radius: 6px; font-size: 12px; margin-bottom: 14px;
+    }
+    .info-row {
+      display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    .loading { color: #a3a3a3; font-size: 13px; padding: 12px 0; }
+  </style>
+</head>
+<body>
+
+<!-- 认证界面（初始显示） -->
+<div id="authView" style="display:none; background:#f4f5f7; min-height:100vh; padding:0 16px;">
+  <div class="auth-card">
+    <h2>运营工具</h2>
+    <p>请输入管理员密钥以继续。</p>
+    <div id="authError" class="error-note" style="display:none;"></div>
+    <div class="input-row">
+      <label>管理员密钥</label>
+      <input type="password" id="secretInput" placeholder="GW_ADMIN_SECRET" autocomplete="current-password" />
+    </div>
+    <button class="btn-primary" id="authBtn" onclick="doAuth()">登入</button>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="mainView" style="display:none;">
+  <div class="topbar">
+    <a class="topbar-brand" href="/dashboard/">PINSO <span>后台</span></a>
+    <a class="topbar-back" href="/dashboard/">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      返回后台
+    </a>
+  </div>
+
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-title">运营工具</div>
+      <div class="sidebar-section">
+        <div class="sidebar-item active" onclick="showSection('captcha')">
+          <svg class="sidebar-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          人机验证
+        </div>
+      </div>
+    </nav>
+
+    <main class="main">
+      <!-- 人机验证配置 -->
+      <div id="sectionCaptcha">
+        <h1 class="page-title">人机验证（Captcha）</h1>
+        <p class="page-desc">控制前台注册、登录、找回密码及结账时是否要求通过 Cloudflare Turnstile 验证。<br>
+          <strong>绕过模式仅供 AI 调试和自动化测试使用，正式运营时请务必关闭。</strong>
+        </p>
+
+        <div class="info-row" id="statusRow">
+          <div class="loading">加载中…</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">调试绕过</div>
+          <div class="card-desc">开启后，所有需要人机验证的接口将跳过验证步骤，前台也不再渲染验证组件。重启服务后自动恢复关闭状态。</div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">跳过人机验证</div>
+              <div class="toggle-hint">适用于注册、登录、找回密码、结账提交</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="bypassToggle" onchange="toggleBypass(this.checked)" />
+              <span class="toggle-track"></span>
+              <span class="toggle-thumb"></span>
+            </label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">当前配置状态</div>
+          <div class="card-desc">以下为服务端读取的实际配置，仅供参考。</div>
+          <table id="statusTable" style="width:100%; border-collapse:collapse; font-size:13px;">
+            <tbody id="statusBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  const KEY = 'gw_admin_secret';
+  let secret = sessionStorage.getItem(KEY) || '';
+
+  function init() {
+    if (secret) { showMain(); loadStatus(); }
+    else showAuth();
+  }
+
+  function showAuth() {
+    document.getElementById('authView').style.display = '';
+    document.getElementById('mainView').style.display = 'none';
+    setTimeout(() => document.getElementById('secretInput').focus(), 50);
+    document.getElementById('secretInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') doAuth();
+    });
+  }
+
+  function showMain() {
+    document.getElementById('authView').style.display = 'none';
+    document.getElementById('mainView').style.display = '';
+  }
+
+  async function doAuth() {
+    const btn = document.getElementById('authBtn');
+    const errEl = document.getElementById('authError');
+    errEl.style.display = 'none';
+    btn.disabled = true;
+    btn.textContent = '验证中…';
+    const entered = document.getElementById('secretInput').value.trim();
+    if (!entered) { btn.disabled = false; btn.textContent = '登入'; return; }
+    try {
+      const r = await fetch('/api/admin/captcha-bypass', {
+        headers: { Authorization: `Bearer ${entered}` }
+      });
+      if (r.status === 401 || r.status === 403) {
+        errEl.textContent = '密钥错误，请重新输入。';
+        errEl.style.display = '';
+        document.getElementById('secretInput').value = '';
+        document.getElementById('secretInput').focus();
+      } else {
+        secret = entered;
+        sessionStorage.setItem(KEY, secret);
+        showMain();
+        const data = await r.json();
+        applyStatus(data);
+      }
+    } catch {
+      errEl.textContent = '无法连接到服务，请刷新重试。';
+      errEl.style.display = '';
+    }
+    btn.disabled = false;
+    btn.textContent = '登入';
+  }
+
+  async function loadStatus() {
+    try {
+      const r = await fetch('/api/admin/captcha-bypass', {
+        headers: { Authorization: `Bearer ${secret}` }
+      });
+      if (r.status === 401) { secret = ''; sessionStorage.removeItem(KEY); showAuth(); return; }
+      applyStatus(await r.json());
+    } catch {
+      document.getElementById('statusRow').innerHTML =
+        '<span style="color:#c0392b;font-size:12px;">无法加载状态</span>';
+    }
+  }
+
+  function applyStatus(data) {
+    const toggle = document.getElementById('bypassToggle');
+    toggle.checked = Boolean(data.captchaBypass);
+
+    const row = document.getElementById('statusRow');
+    row.innerHTML = '';
+    if (data.captchaBypass) {
+      row.innerHTML += badge('warn', '调试模式：人机验证已绕过');
+    } else if (data.captchaEnabled) {
+      row.innerHTML += badge('on', 'Turnstile 人机验证已启用');
+    } else {
+      row.innerHTML += badge('off', 'Turnstile 未配置（人机验证关闭）');
+    }
+    if (data.registerEnabled || data.captchaBypass) {
+      row.innerHTML += badge('on', '注册功能可用');
+    } else {
+      row.innerHTML += badge('off', '注册功能关闭');
+    }
+
+    const rows = [
+      ['captchaBypass（运行时绕过）', data.captchaBypass ? '已开启' : '已关闭', data.captchaBypass ? '#e6f6ec' : ''],
+      ['captchaEnabled（Turnstile 已配置）', data.captchaEnabled ? '是' : '否', ''],
+      ['registerEnabled（注册功能）', data.registerEnabled ? '启用' : '关闭', ''],
+    ];
+    document.getElementById('statusBody').innerHTML = rows.map(([k, v, bg]) =>
+      `<tr style="border-top:1px solid #f0f0f0;${bg?`background:${bg}`:''}" >
+        <td style="padding:10px 4px;color:#6d7175;">${k}</td>
+        <td style="padding:10px 4px;font-weight:500;">${v}</td>
+      </tr>`
+    ).join('');
+  }
+
+  function badge(type, text) {
+    return `<span class="badge badge-${type}"><span class="badge-dot"></span>${text}</span>`;
+  }
+
+  async function toggleBypass(enabled) {
+    document.getElementById('bypassToggle').disabled = true;
+    try {
+      const r = await fetch('/api/admin/captcha-bypass', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
+        body: JSON.stringify({ enabled }),
+      });
+      if (r.status === 401) { secret = ''; sessionStorage.removeItem(KEY); showAuth(); return; }
+      applyStatus(await r.json());
+    } catch {
+      // 恢复原状
+      document.getElementById('bypassToggle').checked = !enabled;
+    }
+    document.getElementById('bypassToggle').disabled = false;
+  }
+
+  function showSection(id) {
+    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+    event.currentTarget.classList.add('active');
+  }
+
+  init();
+</script>
+</body>
+</html>

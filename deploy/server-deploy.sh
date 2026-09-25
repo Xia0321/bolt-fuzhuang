@@ -49,7 +49,7 @@ if [ -n "$missing" ]; then
 fi
 systemctl enable nginx >/dev/null 2>&1
 rm -f /etc/nginx/sites-enabled/default
-mkdir -p "$REMOTE_DIR"/www/storefront "$REMOTE_DIR"/www/dashboard "$REMOTE_DIR"/media "$REMOTE_DIR"/secrets \
+mkdir -p "$REMOTE_DIR"/www/storefront "$REMOTE_DIR"/www/dashboard "$REMOTE_DIR"/www/admin-tools "$REMOTE_DIR"/media "$REMOTE_DIR"/secrets \
          /etc/nginx/pinso /var/www/certbot
 echo "docker $(docker version --format '{{.Server.Version}}') · $(nginx -v 2>&1 | cut -d/ -f2) · certbot $(certbot --version 2>&1 | cut -d' ' -f2)"
 
@@ -58,6 +58,7 @@ cp "$SRC/deploy/docker-compose.yml" "$REMOTE_DIR/"
 rsync -a --delete "$SRC/deploy/account-gw/" "$REMOTE_DIR/account-gw/"
 rsync -a --delete "$SRC/deploy/saleor/" "$REMOTE_DIR/saleor/"
 rsync -a --delete "$SRC/deploy/nginx/" "$REMOTE_DIR/nginx/"
+rsync -a --delete "$SRC/deploy/admin-panel/" "$REMOTE_DIR/www/admin-tools/"
 rsync -a --delete "$SRC/dist/" "$REMOTE_DIR/www/storefront/"
 if [ -f "$SRC/dashboard-dist/index.html" ]; then
   rsync -a --delete "$SRC/dashboard-dist/" "$REMOTE_DIR/www/dashboard/"
@@ -97,6 +98,8 @@ fi
 for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET SALEOR_APP_TOKEN; do
   grep -q "^$key=." .env || echo "提示：.env 中未配置 $key，顾客注册暂不可用"
 done
+# 运营工具管理页需要配置 GW_ADMIN_SECRET
+grep -q "^GW_ADMIN_SECRET=." .env || echo "提示：.env 中未配置 GW_ADMIN_SECRET，/dashboard/tools/ 管理页不可用"
 # 旧版部署把图片存在 Docker 卷里，迁移到宿主机目录后由 Nginx 直接提供
 if docker volume inspect pinso_media >/dev/null 2>&1 && [ -z "$(ls -A media)" ]; then
   docker run --rm -v pinso_media:/from -v "$REMOTE_DIR/media":/to alpine cp -a /from/. /to/
@@ -180,4 +183,5 @@ cat <<EOF
 
 前台：$base/
 后台：$base/dashboard/
+运营工具：$base/dashboard/tools/
 EOF

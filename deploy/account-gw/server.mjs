@@ -31,10 +31,13 @@ const PORT = Number(env.PORT || 8100);
 const SALEOR_API_URL = env.SALEOR_API_URL || 'http://api:8000/graphql/';
 const SALEOR_HOST = env.SALEOR_HOST || 'localhost';
 const STOREFRONT_URL = (env.STOREFRONT_URL || 'http://localhost:5173').replace(/\/$/, '');
-const { TURNSTILE_SITE_KEY = '', TURNSTILE_SECRET = '', SALEOR_APP_TOKEN = '' } = env;
+const { TURNSTILE_SITE_KEY = '', TURNSTILE_SECRET = '', SALEOR_APP_TOKEN = '', GW_ADMIN_SECRET = '' } = env;
 // 未配置 Turnstile 时前台不显示人机验证，登录、找回密码、结账直接调用 Saleor；注册则关闭
 const CAPTCHA_ENABLED = Boolean(TURNSTILE_SITE_KEY && TURNSTILE_SECRET);
 const REGISTER_ENABLED = CAPTCHA_ENABLED && Boolean(SALEOR_APP_TOKEN);
+
+// 运行时可通过管理接口切换（用于 AI 调试、自动化测试），重启后自动恢复
+let captchaBypassEnabled = false;
 
 // 频率限制（Nginx 另有每 IP 的请求频率限制）
 const LIMITS = {
@@ -143,6 +146,7 @@ const validChannel = v => (typeof v === 'string' && /^[a-z0-9-]{1,50}$/.test(v) 
 
 // 先查频率再调用验证服务，被限流的请求不消耗外部调用；验证通过后再计数，避免 Cloudflare 故障误伤合法用户
 async function requireCaptcha(action, token, ip, perHour) {
+  if (captchaBypassEnabled) return; // 管理员已开启调试绕过
   if (!token) throw new Reject('CAPTCHA_FAILED');
   if (count(`${action}:${ip}`, HOUR) >= perHour) throw new Reject('RATE_LIMITED', 429);
   if (!(await verifyCaptcha(token, ip))) throw new Reject('CAPTCHA_FAILED');
@@ -156,21 +160,22 @@ const PASSWORD_CODES = new Set(['PASSWORD_TOO_SHORT', 'PASSWORD_TOO_SIMILAR', 'P
 async function register(input, ip) {
   const email = cleanEmail(input.email);
   const password = str(input.password);
-  const captchaToken = str(input.captchaToken);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Reject('INVALID_EMAIL');
   if (password.length < 8 || password.length > 128) throw new Reject('INVALID_PASSWORD');
-  if (!captchaToken) throw new Reject('CAPTCHA_FAILED');
 
-  // 先查频率再调用验证服务，被限流的请求不消耗外部调用
-  if (count(`attempt:${ip}`, HOUR) >= LIMITS.attemptsPerIpHour
-    || count(`signup:${ip}`, HOUR) >= LIMITS.signupsPerIpHour
-    || count(`signup:${ip}`, DAY) >= LIMITS.signupsPerIpDay) {
-    throw new Reject('RATE_LIMITED', 429);
+  if (!captchaBypassEnabled) {
+    const captchaToken = str(input.captchaToken);
+    if (!captchaToken) throw new Reject('CAPTCHA_FAILED');
+    // 先查频率再调用验证服务，被限流的请求不消耗外部调用
+    if (count(`attempt:${ip}`, HOUR) >= LIMITS.attemptsPerIpHour
+      || count(`signup:${ip}`, HOUR) >= LIMITS.signupsPerIpHour
+      || count(`signup:${ip}`, DAY) >= LIMITS.signupsPerIpDay) {
+      throw new Reject('RATE_LIMITED', 429);
+    }
+    if (count('signup:all', HOUR) >= LIMITS.signupsGlobalHour) throw new Reject('RATE_LIMITED', 429, 'global limit reached');
+    record(`attempt:${ip}`);
+    if (!(await verifyCaptcha(captchaToken, ip))) throw new Reject('CAPTCHA_FAILED');
   }
-  if (count('signup:all', HOUR) >= LIMITS.signupsGlobalHour) throw new Reject('RATE_LIMITED', 429, 'global limit reached');
-  record(`attempt:${ip}`);
-
-  if (!(await verifyCaptcha(captchaToken, ip))) throw new Reject('CAPTCHA_FAILED');
 
   // accountRegister 对已存在的邮箱同样返回成功，需先查询
   const found = await saleor(`query($email: String!) { user(email: $email) { id isConfirmed } }`, { email }, { auth: true });
@@ -315,9 +320,31 @@ const server = http.createServer(async (req, res) => {
   const ip = req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
 
   if (req.method === 'GET' && path === '/api/config') {
-    return send(res, 200, { captchaSiteKey: CAPTCHA_ENABLED ? TURNSTILE_SITE_KEY : '', registerEnabled: REGISTER_ENABLED });
+    return send(res, 200, {
+      captchaSiteKey: (CAPTCHA_ENABLED && !captchaBypassEnabled) ? TURNSTILE_SITE_KEY : '',
+      registerEnabled: REGISTER_ENABLED || captchaBypassEnabled,
+    });
   }
   if (req.method === 'GET' && path === '/health') return send(res, 200, { ok: true });
+
+  // 管理接口：需要 Authorization: Bearer <GW_ADMIN_SECRET>，未配置 GW_ADMIN_SECRET 时不可用
+  if (path === '/api/admin/captcha-bypass') {
+    if (!GW_ADMIN_SECRET) return send(res, 404, { ok: false, code: 'NOT_FOUND' });
+    if (req.headers.authorization !== `Bearer ${GW_ADMIN_SECRET}`) return send(res, 401, { ok: false, code: 'UNAUTHORIZED' });
+    if (req.method === 'GET') {
+      return send(res, 200, { ok: true, captchaBypass: captchaBypassEnabled, captchaEnabled: CAPTCHA_ENABLED, registerEnabled: REGISTER_ENABLED });
+    }
+    if (req.method === 'POST') {
+      try {
+        const body = JSON.parse(await readBody(req)) ?? {};
+        captchaBypassEnabled = Boolean(body.enabled);
+        log({ ip, event: 'admin', action: 'captcha_bypass', enabled: captchaBypassEnabled });
+        return send(res, 200, { ok: true, captchaBypass: captchaBypassEnabled });
+      } catch {
+        return send(res, 400, { ok: false, code: 'BAD_REQUEST' });
+      }
+    }
+  }
   const route = ROUTES[path];
   if (req.method !== 'POST' || !route) return send(res, 404, { ok: false, code: 'NOT_FOUND' });
   if (!route.enabled()) return send(res, 503, { ok: false, code: 'DISABLED' });
