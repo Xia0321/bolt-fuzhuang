@@ -81,6 +81,8 @@ DEFAULT_CHANNEL_SLUG=cn
 EOF
   chmod 600 .env
 fi
+# 首次部署时自动生成管理工具密钥
+grep -q "^GW_ADMIN_SECRET=." .env || echo "GW_ADMIN_SECRET=$(openssl rand -hex 20)" >> .env
 # 与访问地址相关的配置每次按 DOMAIN 重新写入
 set_env() { grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || echo "$1=$2" >> .env; }
 if [ -n "$DOMAIN" ]; then
@@ -98,8 +100,6 @@ fi
 for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET SALEOR_APP_TOKEN; do
   grep -q "^$key=." .env || echo "提示：.env 中未配置 $key，顾客注册暂不可用"
 done
-# 运营工具管理页需要配置 GW_ADMIN_SECRET
-grep -q "^GW_ADMIN_SECRET=." .env || echo "提示：.env 中未配置 GW_ADMIN_SECRET，/dashboard/tools/ 管理页不可用"
 # 旧版部署把图片存在 Docker 卷里，迁移到宿主机目录后由 Nginx 直接提供
 if docker volume inspect pinso_media >/dev/null 2>&1 && [ -z "$(ls -A media)" ]; then
   docker run --rm -v pinso_media:/from -v "$REMOTE_DIR/media":/to alpine cp -a /from/. /to/
@@ -179,9 +179,10 @@ echo "✓ 前台与 API 正常"
 docker compose -p pinso ps --format 'table {{.Service}}\t{{.Status}}'
 
 [ -n "$DOMAIN" ] || base="http://$SERVER_IP"
+gw_secret="$(grep "^GW_ADMIN_SECRET=" .env | cut -d= -f2-)"
 cat <<EOF
 
 前台：$base/
 后台：$base/dashboard/
-运营工具：$base/dashboard/tools/
+运营工具：$base/dashboard/tools/  （密钥：$gw_secret）
 EOF
