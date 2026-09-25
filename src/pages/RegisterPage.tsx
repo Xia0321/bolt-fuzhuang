@@ -7,7 +7,7 @@ import { AuthLayout } from '@/components/AuthLayout';
 import { Captcha } from '@/components/Captcha';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
 import { inputClass } from '@/components/formStyles';
-import { Loader2, MailCheck } from 'lucide-react';
+import { Eye, EyeOff, Loader2, MailCheck } from 'lucide-react';
 
 const MIN_PASSWORD = 8;
 
@@ -20,6 +20,8 @@ export function RegisterPage({ next }: { next?: string }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -79,16 +81,26 @@ export function RegisterPage({ next }: { next?: string }) {
           <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
         </Field>
         <Field label={t('auth_password')} required hint={t('auth_password_hint')}>
-          <input
-            type="password" className={inputClass} required minLength={MIN_PASSWORD}
-            value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'} className={inputClass} required minLength={MIN_PASSWORD}
+              value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
+            />
+            <button type="button" tabIndex={-1} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
         <Field label={t('auth_password_confirm')} required>
-          <input
-            type="password" className={`${inputClass} ${mismatch ? 'border-red-400 focus:border-red-500' : ''}`} required
-            value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              type={showConfirm ? 'text' : 'password'} className={`${inputClass} ${mismatch ? 'border-red-400 focus:border-red-500' : ''}`} required
+              value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
+            />
+            <button type="button" tabIndex={-1} onClick={() => setShowConfirm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+              {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
         {mismatch && <p className="text-[12px] text-red-600 -mt-2">{t('auth_password_mismatch')}</p>}
         <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />

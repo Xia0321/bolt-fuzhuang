@@ -103,7 +103,12 @@ async function saleor(query, variables, { auth = false, headers: extra = {} } = 
   if (SALEOR_HOST) headers.Host = SALEOR_HOST;
   if (auth) headers.Authorization = `Bearer ${SALEOR_APP_TOKEN}`;
   const res = await request(SALEOR_API_URL, { headers, body: JSON.stringify({ query, variables }) });
-  const json = JSON.parse(res.body);
+  let json;
+  try {
+    json = JSON.parse(res.body);
+  } catch {
+    throw new Error(`saleor: unexpected response status=${res.status} body=${res.body.slice(0, 200)}`);
+  }
   if (json.errors?.length) throw new Error(`Saleor: ${json.errors[0].message}`);
   return json.data;
 }
@@ -114,7 +119,13 @@ async function verifyCaptcha(token, ip) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
   });
-  return JSON.parse(res.body).success === true;
+  let parsed;
+  try {
+    parsed = JSON.parse(res.body);
+  } catch {
+    throw new Error(`turnstile: unexpected response status=${res.status} body=${res.body.slice(0, 200)}`);
+  }
+  return parsed.success === true;
 }
 
 class Reject extends Error {
@@ -320,7 +331,10 @@ const server = http.createServer(async (req, res) => {
       log({ ip, event: 'rejected', path, code: e.code });
       return send(res, e.status, { ok: false, code: e.code, message: e.message });
     }
-    if (e instanceof SyntaxError) return send(res, 400, { ok: false, code: 'BAD_REQUEST' });
+    if (e instanceof SyntaxError) {
+      log({ ip, event: 'error', path, message: `JSON parse failed: ${e.message}` });
+      return send(res, 400, { ok: false, code: 'BAD_REQUEST' });
+    }
     log({ ip, event: 'error', path, message: e.message });
     send(res, 500, { ok: false, code: 'UNKNOWN', message: 'Request failed' });
   }

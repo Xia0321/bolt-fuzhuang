@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useNav } from '@/context/NavContext';
 import { useAuth } from '@/context/AuthContext';
@@ -17,6 +18,7 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const config = useAccountConfig();
+  const [showPassword, setShowPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [captchaReset, setCaptchaReset] = useState(0);
   const needCaptcha = !!config?.captchaSiteKey;
@@ -54,7 +56,12 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
           <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
         </Field>
         <Field label={t('auth_password')} required>
-          <input type="password" className={inputClass} required value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+          <div className="relative">
+            <input type={showPassword ? 'text' : 'password'} className={inputClass} required value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+            <button type="button" tabIndex={-1} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
         <div className="text-right">
           <button type="button" onClick={() => navigate({ name: 'resetPassword' })} className="text-[13px] text-neutral-500 underline hover:text-neutral-900">
