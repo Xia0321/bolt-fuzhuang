@@ -80,6 +80,16 @@ cp .env.example .env && npm install && npm run dev           # http://localhost:
 Docker Compose：Saleor API、Worker、PostgreSQL、Redis（均不对公网开放）
 ```
 
+### 日常发布：Jenkins 一键部署
+
+打开 https://pinso.top/jenkins/ → 任务「PINSO 部署」→「立即构建」：拉取 GitHub `main` → 在 Node 容器中打包前台 → 执行 `deploy/server-deploy.sh` → 验证服务。
+
+- 流水线定义在 `deploy/Jenkinsfile`，Jenkins 的安装与配置在 `deploy/jenkins/`（`setup.sh` 可重复执行）
+- Jenkins 以 systemd 服务运行，只监听 127.0.0.1:8080，内存上限 512MB；管理员密码在服务器 `/etc/jenkins/admin.env`
+- 后台管理页面打包需要约 8GB 内存，Jenkins 不打包后台；后台有改动时用下方的本地部署
+
+### 本地部署（首次部署、或需要更新后台页面时）
+
 ```bash
 # 本地打包前台和后台 → 上传 → 启动 → 配置 Nginx 与证书（首次会自动申请 Let's Encrypt 证书）
 SERVER=root@47.84.72.178 SSH_KEY=~/.ssh/pinso.pem DOMAIN=pinso.top ./deploy/deploy.sh
