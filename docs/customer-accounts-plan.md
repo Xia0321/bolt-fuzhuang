@@ -203,3 +203,11 @@ Saleor 保持「需要邮箱验证才能登录」的设置。这样任何人直�
 - 本地已用 Resend 测试地址 delivered@resend.dev 实测：测试邮件、注册确认、支付确认、订单详情、发货通知、找回密码均显示 delivered，确认链接和重置链接在前台可正常完成流程
 
 已知限制：模板为 Saleor 默认英文模板；发信失败不重试；Resend 免费版每天 100 封；绕过人机验证直接调用公开接口批量注册会消耗发信额度（同一邮箱只发一次确认邮件，找回密码同一账号 15 分钟一次）。
+
+## 人机验证扩展到登录、找回密码、结账（2026-09-25，未完成测试）
+
+- 账号服务新增 `/api/login`、`/api/password/reset`、`/api/checkout/complete`，先校验 Turnstile 并按 IP 限流再转交 Saleor；配置接口改为 `GET /api/config`
+- 前台登录、找回密码申请、结账「支付并下单」处显示 Turnstile；账号服务未配置 Turnstile 时这三处直接调用 Saleor
+- Nginx：`/api/register` 每 IP 每分钟 3 次，其余 `/api/` 每 IP 每分钟 20 次
+- 服务器 `.env` 已写入 Turnstile 密钥、Resend 配置，并用 `manage.py create_app` 创建了只有 MANAGE_USERS 权限的「注册服务」App 令牌
+- 已测：账号服务接口（登录成功/密码错误/缺少验证、找回密码）；**未测**：浏览器中带验证的登录提交、结账提交（测试中断时登录页按回车后未跳转，原因未查）、线上发布

@@ -8,7 +8,8 @@ import {
   LAST_ORDER_KEY, emptyAddress, payAndComplete, saveContactAndAddress, setDeliveryMethod,
 } from '@/lib/checkout';
 import { SaleorError } from '@/lib/saleor';
-import { stripSaved } from '@/lib/account';
+import { authErrorKey, stripSaved, useAccountConfig } from '@/lib/account';
+import { Captcha } from '@/components/Captcha';
 import { CHANNELS } from '@/config';
 import { AddressFields, AddressSummary } from '@/components/AddressFields';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
@@ -32,6 +33,10 @@ export function CheckoutPage() {
   const [address, setAddress] = useState<Address>(() => emptyAddress(channelConfig?.defaultCountry ?? ''));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const accountConfig = useAccountConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  const needCaptcha = !!accountConfig?.captchaSiteKey;
 
   // 已填过的信息（例如刷新页面后）回填到表单；已登录且尚未填写时使用账号邮箱和默认地址
   useEffect(() => {
@@ -81,8 +86,9 @@ export function CheckoutPage() {
       await action();
     } catch (e) {
       // Saleor 的错误信息为英文，前面加上出错字段的名称方便定位
+      const key = authErrorKey(e);
       const label = e instanceof SaleorError && e.field ? fieldLabels[e.field] : '';
-      const message = e instanceof Error ? e.message : t('error_generic');
+      const message = key ? t(key) : e instanceof Error ? e.message : t('error_generic');
       setError(label ? `${label}: ${message}` : message);
     } finally {
       setBusy(false);
@@ -112,7 +118,14 @@ export function CheckoutPage() {
   const gateway = checkout.paymentGateways[0];
   const placeOrder = () => withBusy(async () => {
     if (!gateway) return;
-    const order = await payAndComplete(checkout, gateway.id);
+    if (needCaptcha && !captchaToken) throw new Error(t('auth_captcha_required'));
+    let order;
+    try {
+      order = await payAndComplete(checkout, gateway.id, captchaToken ?? undefined);
+    } finally {
+      // 验证令牌只能用一次，提交后（无论成败）都重新验证
+      setCaptchaReset(n => n + 1);
+    }
     try {
       sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
     } catch {
@@ -244,9 +257,10 @@ export function CheckoutPage() {
                     {gateway.id === DUMMY_GATEWAY && (
                       <p className="text-[13px] text-amber-800 bg-amber-50 px-4 py-3">{t('checkout_test_payment')}</p>
                     )}
+                    {needCaptcha && <Captcha siteKey={accountConfig.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
                     <button
                       onClick={placeOrder}
-                      disabled={busy}
+                      disabled={busy || !accountConfig || (needCaptcha && !captchaToken)}
                       className="w-full py-4 bg-neutral-900 text-white text-[13px] tracking-[0.15em] uppercase font-medium hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
                     >
                       {busy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}

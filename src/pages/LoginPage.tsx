@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useNav } from '@/context/NavContext';
 import { useAuth } from '@/context/AuthContext';
-import { authErrorKey } from '@/lib/account';
+import { authErrorKey, useAccountConfig } from '@/lib/account';
+import { Captcha } from '@/components/Captcha';
 import { AuthLayout } from '@/components/AuthLayout';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
 import { inputClass } from '@/components/formStyles';
@@ -15,6 +16,10 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const config = useAccountConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  const needCaptcha = !!config?.captchaSiteKey;
 
   // 已登录时直接前往目标页
   useEffect(() => {
@@ -26,13 +31,16 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError('');
+    if (needCaptcha && !captchaToken) return setError(t('auth_captcha_required'));
+    setBusy(true);
     try {
-      await login(email.trim(), password);
+      await login(email.trim(), password, captchaToken ?? undefined);
     } catch (err) {
       const key = authErrorKey(err);
       setError(key ? t(key) : err instanceof Error ? err.message : t('error_generic'));
+      // 验证令牌只能用一次，失败后重新验证
+      setCaptchaReset(n => n + 1);
     } finally {
       setBusy(false);
     }
@@ -53,7 +61,8 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
             {t('auth_forgot')}
           </button>
         </div>
-        <PrimaryButton busy={busy}>{t('auth_login_button')}</PrimaryButton>
+        {needCaptcha && <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
+        <PrimaryButton busy={busy} disabled={!config || (needCaptcha && !captchaToken)}>{t('auth_login_button')}</PrimaryButton>
       </form>
       <p className="mt-8 text-center text-[14px] text-neutral-500">
         {t('auth_no_account')}{' '}

@@ -1,9 +1,11 @@
+import { useEffect, useState } from 'react';
 import { ACCOUNT_API_URL } from '@/config';
 import { SaleorError, saleorFetch, setAuthTokens, throwIfErrors } from '@/lib/saleor';
 import type { Address, Customer, Money, OrderDetail, OrderStatus, OrderSummary, SavedAddress } from '@/types';
 
-// 顾客账号：登录、注册、找回密码、我的订单、地址簿。全部使用 Saleor 自带接口，
-// 只有注册经过自建的注册服务（deploy/account-gw，负责人机验证与频率限制）
+// 顾客账号：登录、注册、找回密码、我的订单、地址簿，使用 Saleor 自带接口。
+// 注册、登录、找回密码、结账提交先经过账号服务（deploy/account-gw）校验人机验证并限流，再转交 Saleor；
+// 账号服务未配置人机验证时，登录、找回密码、结账直接调用 Saleor
 
 const ADDRESS_FIELDS = 'id firstName lastName streetAddress1 streetAddress2 city cityArea postalCode country { code } countryArea phone';
 
@@ -60,7 +62,65 @@ export function authErrorKey(e: unknown): string | null {
   return code && KNOWN_ERRORS.includes(code) ? `auth_err_${code}` : null;
 }
 
-export async function login(email: string, password: string) {
+// ---------- 账号服务 ----------
+
+export interface AccountConfig {
+  // 为空表示未启用人机验证
+  captchaSiteKey: string;
+  registerEnabled: boolean;
+}
+
+let configPromise: Promise<AccountConfig> | null = null;
+
+export function fetchAccountConfig(): Promise<AccountConfig> {
+  configPromise ??= fetch(`${ACCOUNT_API_URL}/config`)
+    .then(res => (res.ok ? res.json() : Promise.reject()))
+    .catch(() => {
+      // 服务不可用时不缓存，下次重试
+      configPromise = null;
+      return { captchaSiteKey: '', registerEnabled: false };
+    });
+  return configPromise;
+}
+
+// null：加载中
+export function useAccountConfig(): AccountConfig | null {
+  const [config, setConfig] = useState<AccountConfig | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchAccountConfig().then(c => { if (!cancelled) setConfig(c); });
+    return () => { cancelled = true; };
+  }, []);
+  return config;
+}
+
+// 账号服务的错误码：CAPTCHA_FAILED、RATE_LIMITED、EMAIL_EXISTS、INVALID_EMAIL、INVALID_PASSWORD、DISABLED，
+// 以及透传的 Saleor 错误码（如 INVALID_CREDENTIALS）
+export async function accountApi<T>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${ACCOUNT_API_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new SaleorError('Network error', 'NETWORK');
+  }
+  // Nginx 限流直接返回 429，没有 JSON
+  if (res.status === 429) throw new SaleorError('Too many requests', 'RATE_LIMITED');
+  const data = await res.json().catch(() => null) as ({ ok?: boolean; code?: string; message?: string } & T) | null;
+  if (!res.ok || !data?.ok) throw new SaleorError(data?.message || `HTTP ${res.status}`, data?.code || 'UNKNOWN');
+  return data;
+}
+
+// 传入人机验证令牌时经账号服务登录
+export async function login(email: string, password: string, captchaToken?: string) {
+  if (captchaToken) {
+    const data = await accountApi<{ token: string; refreshToken: string }>('/login', { email, password, captchaToken });
+    setAuthTokens(data.token, data.refreshToken);
+    return;
+  }
   const data = await saleorFetch<{ tokenCreate: { token: string | null; refreshToken: string | null; errors: Errors } }>(
     `mutation($email: String!, $password: String!) {
       tokenCreate(email: $email, password: $password) { token refreshToken errors { field message code } }
@@ -80,33 +140,8 @@ export async function fetchMe(): Promise<Customer | null> {
   return data.me ? mapCustomer(data.me) : null;
 }
 
-export interface RegisterConfig {
-  enabled: boolean;
-  captchaSiteKey: string;
-}
-
-export async function fetchRegisterConfig(): Promise<RegisterConfig> {
-  const res = await fetch(`${ACCOUNT_API_URL}/register/config`);
-  if (!res.ok) return { enabled: false, captchaSiteKey: '' };
-  return res.json();
-}
-
-// 注册服务返回的错误码：CAPTCHA_FAILED、RATE_LIMITED、EMAIL_EXISTS、INVALID_EMAIL、INVALID_PASSWORD、DISABLED
 export async function register(input: { email: string; password: string; captchaToken: string; languageCode: string; channel: string }) {
-  let res: Response;
-  try {
-    res = await fetch(`${ACCOUNT_API_URL}/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-  } catch {
-    throw new SaleorError('Network error', 'NETWORK');
-  }
-  // Nginx 限流直接返回 429，没有 JSON
-  if (res.status === 429) throw new SaleorError('Too many requests', 'RATE_LIMITED');
-  const body = await res.json().catch(() => null) as { ok?: boolean; code?: string; message?: string } | null;
-  if (!res.ok || !body?.ok) throw new SaleorError(body?.message || `HTTP ${res.status}`, body?.code || 'UNKNOWN');
+  await accountApi('/register', input);
 }
 
 // 点击注册确认邮件中的链接后确认账号
@@ -122,7 +157,12 @@ export async function confirmAccount(email: string, token: string) {
 
 // ---------- 找回密码 ----------
 
-export async function requestPasswordReset(email: string, channel: string) {
+// 传入人机验证令牌时经账号服务申请（邮箱是否存在都返回成功）
+export async function requestPasswordReset(email: string, channel: string, captchaToken?: string) {
+  if (captchaToken) {
+    await accountApi('/password/reset', { email, channel, captchaToken });
+    return;
+  }
   const data = await saleorFetch<{ requestPasswordReset: { errors: Errors } }>(
     `mutation($email: String!, $redirectUrl: String!, $channel: String!) {
       requestPasswordReset(email: $email, redirectUrl: $redirectUrl, channel: $channel) { errors { field message code } }

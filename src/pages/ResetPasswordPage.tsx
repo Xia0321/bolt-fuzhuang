@@ -3,7 +3,8 @@ import { useI18n } from '@/i18n/I18nContext';
 import { useNav } from '@/context/NavContext';
 import { useAuth } from '@/context/AuthContext';
 import { useStore } from '@/context/StoreContext';
-import { authErrorKey, requestPasswordReset, setNewPassword } from '@/lib/account';
+import { authErrorKey, requestPasswordReset, setNewPassword, useAccountConfig } from '@/lib/account';
+import { Captcha } from '@/components/Captcha';
 import { EMAIL_ENABLED } from '@/config';
 import { AuthLayout } from '@/components/AuthLayout';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
@@ -24,16 +25,23 @@ function RequestForm() {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+  const config = useAccountConfig();
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
+  const needCaptcha = !!config?.captchaSiteKey;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError('');
+    if (needCaptcha && !captchaToken) return setError(t('auth_captcha_required'));
+    setBusy(true);
     try {
-      await requestPasswordReset(email.trim(), channel);
+      await requestPasswordReset(email.trim(), channel, captchaToken ?? undefined);
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('error_generic'));
+      const key = authErrorKey(err);
+      setError(key ? t(key) : err instanceof Error ? err.message : t('error_generic'));
+      setCaptchaReset(n => n + 1);
     } finally {
       setBusy(false);
     }
@@ -54,7 +62,8 @@ function RequestForm() {
           <Field label={t('checkout_email')} required>
             <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
           </Field>
-          <PrimaryButton busy={busy}>{t('reset_send')}</PrimaryButton>
+          {needCaptcha && <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
+          <PrimaryButton busy={busy} disabled={!config || (needCaptcha && !captchaToken)}>{t('reset_send')}</PrimaryButton>
         </form>
       )}
       <p className="mt-8 text-center text-[14px]">

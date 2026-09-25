@@ -1,19 +1,24 @@
-// 注册服务：为顾客注册加上人机验证（Cloudflare Turnstile）和频率限制。
+// 账号服务：在注册、登录、找回密码、结账提交前校验 Cloudflare Turnstile 人机验证并限制频率，再转交 Saleor。
 //
 // 注册后由 Saleor 自带的邮件插件发送确认邮件，顾客点击邮件中的链接（前台 /confirm-account）完成确认后才能登录。
-// 本服务负责在调用 accountRegister 之前拦住脚本批量注册，避免消耗发信额度。
+// 说明：Saleor 的公开接口仍可被直接调用，绕过网站表单的请求由 Saleor 自身的限制兜底
+// （登录失败按 IP 延迟、同一账号 15 分钟只发一次重置邮件、同一邮箱只发一次确认邮件）。
 //
-// 接口：
-//   GET  /api/register/config  → { enabled, captchaSiteKey }
-//   POST /api/register         { email, password, captchaToken, languageCode?, channel? }
-//                              → { ok: true } 或 { ok: false, code, message }
+// 接口（失败统一返回 { ok: false, code, message }）：
+//   GET  /api/config             → { captchaSiteKey, registerEnabled }
+//   POST /api/register           { email, password, captchaToken, languageCode?, channel? } → { ok }
+//   POST /api/login              { email, password, captchaToken } → { ok, token, refreshToken }
+//   POST /api/password/reset     { email, captchaToken, channel } → { ok }（邮箱是否存在都返回成功）
+//   POST /api/checkout/complete  { checkoutId, gatewayId, paymentToken, captchaToken }
+//                                → { ok, order: { id, number, userEmail, total } }
+//                                已登录顾客需带 Authorization 头，本服务原样转给 Saleor
 //
 // 环境变量：
 //   TURNSTILE_SITE_KEY / TURNSTILE_SECRET  Cloudflare Turnstile 站点密钥与密钥
-//   SALEOR_APP_TOKEN   Saleor 后台「扩展」中创建的本地应用令牌，只需「管理客户」权限（查询邮箱是否已注册）
+//   SALEOR_APP_TOKEN   Saleor 本地应用令牌，只需「管理客户」权限（注册时查询邮箱是否已注册）
 //   SALEOR_API_URL     默认 http://api:8000/graphql/（Compose 内网）
 //   SALEOR_HOST        请求 Saleor 时使用的 Host 头，需在 Saleor 的 ALLOWED_HOSTS 中，默认 localhost
-//   STOREFRONT_URL     前台地址，确认邮件中的链接指向 <STOREFRONT_URL>/confirm-account
+//   STOREFRONT_URL     前台地址，确认邮件、重置邮件中的链接指向 <STOREFRONT_URL>/confirm-account、/reset-password
 //   PORT               默认 8100
 //
 // 不依赖任何 npm 包，node server.mjs 即可运行。
@@ -27,11 +32,16 @@ const SALEOR_API_URL = env.SALEOR_API_URL || 'http://api:8000/graphql/';
 const SALEOR_HOST = env.SALEOR_HOST || 'localhost';
 const STOREFRONT_URL = (env.STOREFRONT_URL || 'http://localhost:5173').replace(/\/$/, '');
 const { TURNSTILE_SITE_KEY = '', TURNSTILE_SECRET = '', SALEOR_APP_TOKEN = '' } = env;
-const ENABLED = Boolean(TURNSTILE_SITE_KEY && TURNSTILE_SECRET && SALEOR_APP_TOKEN);
+// 未配置 Turnstile 时前台不显示人机验证，登录、找回密码、结账直接调用 Saleor；注册则关闭
+const CAPTCHA_ENABLED = Boolean(TURNSTILE_SITE_KEY && TURNSTILE_SECRET);
+const REGISTER_ENABLED = CAPTCHA_ENABLED && Boolean(SALEOR_APP_TOKEN);
 
-// 频率限制（Nginx 另有每 IP 每分钟 3 次的请求限制）
+// 频率限制（Nginx 另有每 IP 的请求频率限制）
 const LIMITS = {
   attemptsPerIpHour: Number(env.LIMIT_ATTEMPTS_PER_IP_HOUR || 20),
+  loginsPerIpHour: Number(env.LIMIT_LOGINS_PER_IP_HOUR || 30),
+  resetsPerIpHour: Number(env.LIMIT_RESETS_PER_IP_HOUR || 10),
+  checkoutsPerIpHour: Number(env.LIMIT_CHECKOUTS_PER_IP_HOUR || 30),
   signupsPerIpHour: Number(env.LIMIT_SIGNUPS_PER_IP_HOUR || 5),
   signupsPerIpDay: Number(env.LIMIT_SIGNUPS_PER_IP_DAY || 20),
   // 全站每小时注册数超过该值视为被攻击，暂停注册
@@ -87,8 +97,9 @@ function request(url, { method = 'POST', headers = {}, body = '' } = {}) {
   });
 }
 
-async function saleor(query, variables, { auth = false } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
+// auth：使用 App 令牌；headers：额外请求头（转发顾客的登录凭证、客户端 IP）
+async function saleor(query, variables, { auth = false, headers: extra = {} } = {}) {
+  const headers = { 'Content-Type': 'application/json', ...extra };
   if (SALEOR_HOST) headers.Host = SALEOR_HOST;
   if (auth) headers.Authorization = `Bearer ${SALEOR_APP_TOKEN}`;
   const res = await request(SALEOR_API_URL, { headers, body: JSON.stringify({ query, variables }) });
@@ -106,8 +117,6 @@ async function verifyCaptcha(token, ip) {
   return JSON.parse(res.body).success === true;
 }
 
-// ---------- 注册 ----------
-
 class Reject extends Error {
   constructor(code, status = 400, message = code) {
     super(message);
@@ -116,12 +125,26 @@ class Reject extends Error {
   }
 }
 
+const str = v => (typeof v === 'string' ? v : '');
+const cleanEmail = v => str(v).trim().toLowerCase();
+const validChannel = v => (typeof v === 'string' && /^[a-z0-9-]{1,50}$/.test(v) ? v : undefined);
+
+// 先查频率再调用验证服务，被限流的请求不消耗外部调用
+async function requireCaptcha(action, token, ip, perHour) {
+  if (!token) throw new Reject('CAPTCHA_FAILED');
+  if (count(`${action}:${ip}`, HOUR) >= perHour) throw new Reject('RATE_LIMITED', 429);
+  record(`${action}:${ip}`);
+  if (!(await verifyCaptcha(token, ip))) throw new Reject('CAPTCHA_FAILED');
+}
+
+// ---------- 注册 ----------
+
 const PASSWORD_CODES = new Set(['PASSWORD_TOO_SHORT', 'PASSWORD_TOO_SIMILAR', 'PASSWORD_TOO_COMMON', 'PASSWORD_ENTIRELY_NUMERIC', 'INVALID_PASSWORD']);
 
 async function register(input, ip) {
-  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
-  const password = typeof input.password === 'string' ? input.password : '';
-  const captchaToken = typeof input.captchaToken === 'string' ? input.captchaToken : '';
+  const email = cleanEmail(input.email);
+  const password = str(input.password);
+  const captchaToken = str(input.captchaToken);
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw new Reject('INVALID_EMAIL');
   if (password.length < 8 || password.length > 128) throw new Reject('INVALID_PASSWORD');
   if (!captchaToken) throw new Reject('CAPTCHA_FAILED');
@@ -156,7 +179,7 @@ async function register(input, ip) {
       password,
       redirectUrl: `${STOREFRONT_URL}/confirm-account`,
       ...(LANGUAGES.has(input.languageCode) ? { languageCode: input.languageCode } : {}),
-      ...(typeof input.channel === 'string' && /^[a-z0-9-]{1,50}$/.test(input.channel) ? { channel: input.channel } : {}),
+      ...(validChannel(input.channel) ? { channel: input.channel } : {}),
     },
   });
   const err = reg.accountRegister.errors[0];
@@ -168,6 +191,76 @@ async function register(input, ip) {
   }
   record(`signup:${ip}`);
   record('signup:all');
+  return { ok: true };
+}
+
+// ---------- 登录 ----------
+
+async function login(input, ip) {
+  const email = cleanEmail(input.email);
+  const password = str(input.password);
+  if (!email || !password) throw new Reject('INVALID_CREDENTIALS');
+  await requireCaptcha('login', str(input.captchaToken), ip, LIMITS.loginsPerIpHour);
+  // 把顾客 IP 传给 Saleor，使其登录防爆破按顾客 IP 计数，而不是本服务的 IP
+  const d = await saleor(`mutation($email: String!, $password: String!) {
+    tokenCreate(email: $email, password: $password) { token refreshToken errors { code message } }
+  }`, { email, password }, { headers: { 'X-Forwarded-For': ip } });
+  const err = d.tokenCreate.errors[0];
+  if (err) throw new Reject(err.code || 'INVALID_CREDENTIALS', 400, err.message);
+  return { ok: true, token: d.tokenCreate.token, refreshToken: d.tokenCreate.refreshToken };
+}
+
+// ---------- 找回密码 ----------
+
+async function passwordReset(input, ip) {
+  const email = cleanEmail(input.email);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Reject('INVALID_EMAIL');
+  await requireCaptcha('reset', str(input.captchaToken), ip, LIMITS.resetsPerIpHour);
+  const d = await saleor(`mutation($email: String!, $redirectUrl: String!, $channel: String) {
+    requestPasswordReset(email: $email, redirectUrl: $redirectUrl, channel: $channel) { errors { code message } }
+  }`, { email, redirectUrl: `${STOREFRONT_URL}/reset-password`, channel: validChannel(input.channel) ?? null });
+  // 邮箱不存在、15 分钟内已发送过等情况都按成功返回，避免被用来探测邮箱是否注册
+  const err = d.requestPasswordReset.errors[0];
+  if (err) log({ ip, event: 'reset_skipped', code: err.code });
+  return { ok: true };
+}
+
+// ---------- 结账提交 ----------
+
+async function checkoutComplete(input, ip, authorization) {
+  const checkoutId = str(input.checkoutId);
+  const gatewayId = str(input.gatewayId);
+  if (!checkoutId || !gatewayId) throw new Reject('BAD_REQUEST');
+  await requireCaptcha('checkout', str(input.captchaToken), ip, LIMITS.checkoutsPerIpHour);
+  const headers = authorization ? { Authorization: authorization } : {};
+
+  // 金额以服务端查询的为准，不信任前端传入
+  const c = await saleor(`query($id: ID!) {
+    checkout(id: $id) { totalPrice { gross { amount } } availablePaymentGateways { id } }
+  }`, { id: checkoutId }, { headers });
+  if (!c.checkout) throw new Reject('CHECKOUT_NOT_FOUND', 404);
+  if (!c.checkout.availablePaymentGateways.some(g => g.id === gatewayId)) throw new Reject('BAD_REQUEST');
+
+  const pay = await saleor(`mutation($id: ID!, $input: PaymentInput!) {
+    checkoutPaymentCreate(id: $id, input: $input) { errors { field code message } }
+  }`, {
+    id: checkoutId,
+    input: { gateway: gatewayId, token: str(input.paymentToken) || undefined, amount: c.checkout.totalPrice.gross.amount },
+  }, { headers });
+  const payErr = pay.checkoutPaymentCreate.errors[0];
+  if (payErr) throw new Reject(payErr.code || 'CHECKOUT_ERROR', 400, payErr.message);
+
+  const done = await saleor(`mutation($id: ID!) {
+    checkoutComplete(id: $id) {
+      order { id number userEmail total { gross { amount currency } } }
+      confirmationNeeded
+      errors { field code message }
+    }
+  }`, { id: checkoutId }, { headers });
+  const doneErr = done.checkoutComplete.errors[0];
+  if (doneErr) throw new Reject(doneErr.code || 'CHECKOUT_ERROR', 400, doneErr.message);
+  if (!done.checkoutComplete.order) throw new Reject('CONFIRMATION_NEEDED');
+  return { ok: true, order: done.checkoutComplete.order };
 }
 
 // ---------- HTTP ----------
@@ -197,35 +290,44 @@ function readBody(req, limit = 10_000) {
   });
 }
 
+const ROUTES = {
+  '/api/register': { handler: register, enabled: () => REGISTER_ENABLED },
+  '/api/login': { handler: login, enabled: () => CAPTCHA_ENABLED },
+  '/api/password/reset': { handler: passwordReset, enabled: () => CAPTCHA_ENABLED },
+  '/api/checkout/complete': { handler: checkoutComplete, enabled: () => CAPTCHA_ENABLED },
+};
+
 const server = http.createServer(async (req, res) => {
   const path = new URL(req.url, 'http://localhost').pathname;
   // Nginx 以 X-Real-IP 传入客户端真实 IP；本地开发直连时使用连接地址
   const ip = req.headers['x-real-ip'] || req.socket.remoteAddress || 'unknown';
 
-  if (req.method === 'GET' && path === '/api/register/config') {
-    return send(res, 200, { enabled: ENABLED, captchaSiteKey: ENABLED ? TURNSTILE_SITE_KEY : '' });
+  if (req.method === 'GET' && path === '/api/config') {
+    return send(res, 200, { captchaSiteKey: CAPTCHA_ENABLED ? TURNSTILE_SITE_KEY : '', registerEnabled: REGISTER_ENABLED });
   }
   if (req.method === 'GET' && path === '/health') return send(res, 200, { ok: true });
-  if (req.method !== 'POST' || path !== '/api/register') return send(res, 404, { ok: false, code: 'NOT_FOUND' });
-  if (!ENABLED) return send(res, 503, { ok: false, code: 'DISABLED' });
+  const route = ROUTES[path];
+  if (req.method !== 'POST' || !route) return send(res, 404, { ok: false, code: 'NOT_FOUND' });
+  if (!route.enabled()) return send(res, 503, { ok: false, code: 'DISABLED' });
 
   try {
-    const input = JSON.parse(await readBody(req));
-    await register(input ?? {}, ip);
-    log({ ip, event: 'registered', domain: String(input.email).split('@')[1] });
-    send(res, 200, { ok: true });
+    const input = JSON.parse(await readBody(req)) ?? {};
+    const result = await route.handler(input, ip, req.headers.authorization);
+    log({ ip, event: 'ok', path, ...(input.email ? { domain: String(input.email).split('@')[1] } : {}) });
+    send(res, 200, result);
   } catch (e) {
     if (e instanceof Reject) {
-      log({ ip, event: 'rejected', code: e.code });
+      log({ ip, event: 'rejected', path, code: e.code });
       return send(res, e.status, { ok: false, code: e.code, message: e.message });
     }
     if (e instanceof SyntaxError) return send(res, 400, { ok: false, code: 'BAD_REQUEST' });
-    log({ ip, event: 'error', message: e.message });
-    send(res, 500, { ok: false, code: 'UNKNOWN', message: 'Registration failed' });
+    log({ ip, event: 'error', path, message: e.message });
+    send(res, 500, { ok: false, code: 'UNKNOWN', message: 'Request failed' });
   }
 });
 
 server.listen(PORT, () => {
-  log({ event: 'started', port: PORT, enabled: ENABLED, saleor: SALEOR_API_URL });
-  if (!ENABLED) log({ event: 'warning', message: 'TURNSTILE_SITE_KEY / TURNSTILE_SECRET / SALEOR_APP_TOKEN 未配置，注册已关闭' });
+  log({ event: 'started', port: PORT, captcha: CAPTCHA_ENABLED, register: REGISTER_ENABLED, saleor: SALEOR_API_URL });
+  if (!CAPTCHA_ENABLED) log({ event: 'warning', message: 'TURNSTILE_SITE_KEY / TURNSTILE_SECRET 未配置，人机验证与注册已关闭' });
+  else if (!REGISTER_ENABLED) log({ event: 'warning', message: 'SALEOR_APP_TOKEN 未配置，注册已关闭' });
 });

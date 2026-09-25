@@ -82,7 +82,8 @@ export function refreshAccessToken(): Promise<string | null> {
   return refreshing;
 }
 
-async function currentToken(): Promise<string | null> {
+// 当前有效的访问凭证（快过期时先续期），未登录返回 null
+export async function currentToken(): Promise<string | null> {
   if (accessToken && tokenExpiry(accessToken) - Date.now() / 1000 > 30) return accessToken;
   if (accessToken || getRefreshToken()) return refreshAccessToken();
   return null;

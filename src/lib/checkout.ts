@@ -1,4 +1,5 @@
-import { saleorFetch, throwIfErrors } from '@/lib/saleor';
+import { currentToken, saleorFetch, throwIfErrors } from '@/lib/saleor';
+import { accountApi } from '@/lib/account';
 import type { Address, CartLine, Checkout, Money, PlacedOrder } from '@/types';
 
 // 下单成功后暂存订单摘要，供订单完成页展示
@@ -201,8 +202,18 @@ export async function setDeliveryMethod(id: string, lang: string, deliveryMethod
 }
 
 // 创建支付并完成下单。测试环境使用 Saleor 自带的 dummy 网关；
-// 接入 Stripe 时需在前端先用 Stripe.js 拿到支付凭证，再作为 token 传入
-export async function payAndComplete(checkout: Checkout, gatewayId: string, token = 'charged'): Promise<PlacedOrder> {
+// 接入 Stripe 时需在前端先用 Stripe.js 拿到支付凭证，再作为 token 传入。
+// 传入人机验证令牌时经账号服务提交（已登录则带上登录凭证，订单归到该账号）
+export async function payAndComplete(checkout: Checkout, gatewayId: string, captchaToken?: string, token = 'charged'): Promise<PlacedOrder> {
+  if (captchaToken) {
+    const access = await currentToken();
+    const { order } = await accountApi<{ order: { id: string; number: string; userEmail: string | null; total: { gross: Money } } }>(
+      '/checkout/complete',
+      { checkoutId: checkout.id, gatewayId, paymentToken: token, captchaToken },
+      access ? { Authorization: `Bearer ${access}` } : {},
+    );
+    return { id: order.id, number: order.number, total: order.total.gross, email: order.userEmail || checkout.email || '' };
+  }
   const pay = await saleorFetch<{ checkoutPaymentCreate: { errors: MutationResult['errors'] } }>(
     `mutation($id: ID!, $input: PaymentInput!) {
       checkoutPaymentCreate(id: $id, input: $input) { errors { field message code } }

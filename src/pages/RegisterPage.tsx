@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useNav } from '@/context/NavContext';
 import { useAuth } from '@/context/AuthContext';
-import { authErrorKey, fetchRegisterConfig, type RegisterConfig } from '@/lib/account';
+import { authErrorKey, useAccountConfig } from '@/lib/account';
 import { AuthLayout } from '@/components/AuthLayout';
 import { Captcha } from '@/components/Captcha';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
@@ -16,7 +16,7 @@ export function RegisterPage({ next }: { next?: string }) {
   const { t } = useI18n();
   const { navigate, navigateUrl } = useNav();
   const { user, register } = useAuth();
-  const [config, setConfig] = useState<RegisterConfig | null>(null);
+  const config = useAccountConfig();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -26,10 +26,6 @@ export function RegisterPage({ next }: { next?: string }) {
   const [error, setError] = useState('');
   // 注册成功后显示「请查收确认邮件」
   const [sentTo, setSentTo] = useState('');
-
-  useEffect(() => {
-    fetchRegisterConfig().then(setConfig).catch(() => setConfig({ enabled: false, captchaSiteKey: '' }));
-  }, []);
 
   useEffect(() => {
     if (user) {
@@ -73,7 +69,7 @@ export function RegisterPage({ next }: { next?: string }) {
     );
   } else if (!config) {
     body = <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-neutral-400" /></div>;
-  } else if (!config.enabled) {
+  } else if (!config.registerEnabled) {
     body = <ErrorNote>{t('auth_err_DISABLED')}</ErrorNote>;
   } else {
     body = (

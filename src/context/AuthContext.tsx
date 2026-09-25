@@ -8,7 +8,7 @@ interface AuthContextValue {
   user: Customer | null;
   // 页面加载时恢复登录状态完成前为 false，避免已登录用户被误判为未登录
   ready: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, captchaToken?: string) => Promise<void>;
   // 注册后需点击确认邮件中的链接才能登录
   register: (email: string, password: string, captchaToken: string) => Promise<void>;
   logout: () => void;
@@ -42,8 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserState(await fetchMe());
   }, []);
 
-  const login = useCallback(async (email: string, password: string) => {
-    await loginRequest(email, password);
+  const login = useCallback(async (email: string, password: string, captchaToken?: string) => {
+    await loginRequest(email, password, captchaToken);
     await reloadUser();
   }, [reloadUser]);
 
