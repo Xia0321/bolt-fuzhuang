@@ -66,6 +66,61 @@ if [ -f "$SRC/dashboard-dist/index.html" ]; then
 else
   echo "前台已更新（后台保持不变）"
 fi
+# 向后台 index.html 注入增强脚本（校验失败时自动滚动到错误字段）
+dashboard_html="$REMOTE_DIR/www/dashboard/index.html"
+if [ -f "$dashboard_html" ] && ! grep -q 'pinso-enhancements' "$dashboard_html"; then
+  python3 - "$dashboard_html" <<'PYEOF'
+import sys, pathlib
+f = pathlib.Path(sys.argv[1])
+html = f.read_text()
+script = '''<script id="pinso-enhancements">
+(function(){
+  // 错误 toast 出现时，自动滚动到页面中第一个报错字段
+  function scrollToFirstError() {
+    // Saleor Dashboard 错误字段：aria-invalid 或 含 error 类的 input/textarea，
+    // 或其下方的错误文字段落
+    var selectors = [
+      'input[aria-invalid="true"]',
+      'textarea[aria-invalid="true"]',
+      '[class*="error"] input',
+      '[class*="error"] textarea',
+      'p[class*="error"]:not(:empty)',
+    ];
+    for (var i = 0; i < selectors.length; i++) {
+      var el = document.querySelector(selectors[i]);
+      if (el && el.offsetParent !== null) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+  }
+  // 监听 toast 区域：Saleor 把 toast 挂在 body 直接子节点的 portal 里
+  var observer = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var nodes = mutations[i].addedNodes;
+      for (var j = 0; j < nodes.length; j++) {
+        var node = nodes[j];
+        if (node.nodeType === 1) {
+          // 新增节点包含"错误"或 error 字样时触发滚动
+          var text = node.textContent || '';
+          if (text.indexOf('错误') !== -1 || text.toLowerCase().indexOf('error') !== -1) {
+            setTimeout(scrollToFirstError, 100);
+            return;
+          }
+        }
+      }
+    }
+  });
+  document.addEventListener('DOMContentLoaded', function(){
+    observer.observe(document.body, { childList: true, subtree: false });
+  });
+})();
+</script>'''
+html = html.replace('</body>', script + '</body>', 1)
+f.write_text(html)
+print('已注入 pinso-enhancements')
+PYEOF
+fi
 
 step "生成或更新应用配置"
 cd "$REMOTE_DIR"
