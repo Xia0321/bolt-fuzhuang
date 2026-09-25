@@ -55,6 +55,7 @@ echo "docker $(docker version --format '{{.Server.Version}}') · $(nginx -v 2>&1
 
 step "更新文件"
 cp "$SRC/deploy/docker-compose.yml" "$REMOTE_DIR/"
+rsync -a --delete "$SRC/deploy/account-gw/" "$REMOTE_DIR/account-gw/"
 rsync -a --delete "$SRC/deploy/nginx/" "$REMOTE_DIR/nginx/"
 rsync -a --delete "$SRC/dist/" "$REMOTE_DIR/www/storefront/"
 if [ -f "$SRC/dashboard-dist/index.html" ]; then
@@ -84,11 +85,17 @@ if [ -n "$DOMAIN" ]; then
   set_env PUBLIC_URL "https://$DOMAIN/"
   set_env ALLOWED_HOSTS "$DOMAIN,www.$DOMAIN,$SERVER_IP,localhost,127.0.0.1"
   set_env ALLOWED_CLIENT_HOSTS "$DOMAIN,www.$DOMAIN"
+  set_env STOREFRONT_URL "https://$DOMAIN"
 else
   set_env PUBLIC_URL "http://$SERVER_IP/"
   set_env ALLOWED_HOSTS "$SERVER_IP,localhost,127.0.0.1"
   set_env ALLOWED_CLIENT_HOSTS "$SERVER_IP,localhost"
+  set_env STOREFRONT_URL "http://$SERVER_IP"
 fi
+# 顾客注册需要 Turnstile 密钥和 Saleor App 令牌（见 README「顾客注册」），缺少时注册功能关闭
+for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET SALEOR_APP_TOKEN; do
+  grep -q "^$key=." .env || echo "提示：.env 中未配置 $key，顾客注册暂不可用"
+done
 # 旧版部署把图片存在 Docker 卷里，迁移到宿主机目录后由 Nginx 直接提供
 if docker volume inspect pinso_media >/dev/null 2>&1 && [ -z "$(ls -A media)" ]; then
   docker run --rm -v pinso_media:/from -v "$REMOTE_DIR/media":/to alpine cp -a /from/. /to/
@@ -105,6 +112,7 @@ done
 
 step "配置 Nginx 与 HTTPS 证书"
 cp nginx/locations.conf nginx/ssl.conf nginx/security-headers.conf /etc/nginx/pinso/
+cp nginx/ratelimit.conf /etc/nginx/conf.d/pinso-ratelimit.conf
 site=/etc/nginx/sites-available/pinso
 ln -sf "$site" /etc/nginx/sites-enabled/pinso
 use_https() { sed "s/__DOMAIN__/$DOMAIN/g" nginx/https.conf.template > "$site"; }

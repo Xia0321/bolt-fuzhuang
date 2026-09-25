@@ -85,6 +85,16 @@ async function ensureShopName() {
   }`, { name });
 }
 
+// 顾客注册经注册服务（deploy/account-gw）校验后标记为已验证；
+// 直接调用 accountRegister 注册的账号保持未验证、无法登录
+async function ensureAccountConfirmation() {
+  await gql(`mutation {
+    shopSettingsUpdate(input: { enableAccountConfirmationByEmail: true, allowLoginWithoutConfirmation: false }) {
+      errors { field message }
+    }
+  }`);
+}
+
 async function ensureWarehouse() {
   const d = await gql(`{ warehouses(first: 100) { edges { node { id slug } } } }`);
   const found = d.warehouses.edges.find(e => e.node.slug === data.warehouse.slug);
@@ -523,6 +533,7 @@ async function main() {
   console.log(`Saleor API: ${API}`);
   await login();
   await ensureShopName();
+  await ensureAccountConfirmation();
   const warehouseId = await ensureWarehouse();
   const channels = await ensureChannels(warehouseId);
   await ensureShippingZone(channels, warehouseId);

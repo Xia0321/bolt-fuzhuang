@@ -3,8 +3,10 @@ import { useRouter, type Route } from '@/lib/router';
 
 interface NavContextValue {
   route: Route;
-  navigate: (r: Route) => void;
+  navigate: (r: Route, options?: { replace?: boolean }) => void;
   navigateUrl: (url: string) => void;
+  // 当前地址（路径 + 查询参数），用于登录后返回
+  currentPath: () => string;
 }
 
 const NavContext = createContext<NavContextValue | null>(null);

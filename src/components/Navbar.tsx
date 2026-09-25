@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ShoppingBag, Menu, X } from 'lucide-react';
+import { ShoppingBag, Menu, X, User } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useCart } from '@/context/CartContext';
 import { useStore } from '@/context/StoreContext';
 import { useNav } from '@/context/NavContext';
+import { useAuth } from '@/context/AuthContext';
 import { locales, localeLabels } from '@/i18n/translations';
 import { CHANNELS } from '@/config';
 import { routeToPath } from '@/lib/router';
@@ -14,6 +15,15 @@ export function Navbar() {
   const { totalItems } = useCart();
   const { store } = useStore();
   const { route, navigate, navigateUrl } = useNav();
+  const { user, logout } = useAuth();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const goAccount = () => navigate(user ? { name: 'account' } : { name: 'login' });
+  const signOut = () => {
+    logout();
+    setAccountOpen(false);
+    setMobileOpen(false);
+    navigate({ name: 'home' });
+  };
   const links = store?.navbar ?? [];
   const brandName = store?.site.brandName ?? '';
   const currentChannel = CHANNELS.find(c => c.slug === channel);
@@ -125,6 +135,38 @@ export function Navbar() {
                   </>
                 )}
               </div>
+              {/* 账号：未登录进入登录页；已登录时电脑端展开菜单，手机端直接进入账号页 */}
+              <div className="relative">
+                <button
+                  className={`block ${linkClass}`}
+                  onClick={() => (user && window.matchMedia('(min-width: 768px)').matches ? setAccountOpen(!accountOpen) : goAccount())}
+                  aria-label={t('nav_account')}
+                  title={user ? user.email : t('auth_login_title')}
+                >
+                  <User size={22} strokeWidth={1.5} />
+                </button>
+                {user && accountOpen && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setAccountOpen(false)} />
+                    <div className="absolute right-0 top-full mt-2 bg-white shadow-lg rounded-sm border border-neutral-100 py-2 z-20 min-w-[200px]">
+                      <p className="px-4 pt-1 pb-2 text-[12px] text-neutral-400 truncate max-w-[240px]">{user.email}</p>
+                      {([['orders', 'account_orders'], ['addresses', 'account_addresses']] as const).map(([tab, label]) => (
+                        <button
+                          key={tab}
+                          onClick={() => { setAccountOpen(false); navigate({ name: 'account', tab }); }}
+                          className="block w-full text-left px-4 py-1.5 text-[13px] text-neutral-700 transition-colors hover:bg-neutral-50"
+                        >
+                          {t(label)}
+                        </button>
+                      ))}
+                      <div className="my-2 border-t border-neutral-100" />
+                      <button onClick={signOut} className="block w-full text-left px-4 py-1.5 text-[13px] text-neutral-500 transition-colors hover:bg-neutral-50">
+                        {t('account_logout')}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <button
                 className={`relative ${linkClass}`}
                 onClick={() => navigate({ name: 'cart' })}
@@ -174,6 +216,35 @@ export function Navbar() {
               ))}
             </nav>
             <div className="mt-auto px-6 py-6 border-t border-neutral-100 space-y-4">
+              {/* 账号 */}
+              {user ? (
+                <div>
+                  <p className="text-[12px] text-neutral-400 truncate mb-2">{user.email}</p>
+                  <div className="flex items-center gap-4 text-[14px]">
+                    <button onClick={goAccount} className="flex items-center gap-1.5 text-neutral-900">
+                      <User size={15} strokeWidth={1.5} />
+                      {t('account_title')}
+                    </button>
+                    <span className="text-neutral-200">|</span>
+                    <button onClick={signOut} className="text-neutral-500">{t('account_logout')}</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => navigate({ name: 'login' })}
+                    className="py-2.5 border border-neutral-900 text-[13px] tracking-[0.1em] text-neutral-900"
+                  >
+                    {t('auth_login_title')}
+                  </button>
+                  <button
+                    onClick={() => navigate({ name: 'register' })}
+                    className="py-2.5 bg-neutral-900 text-[13px] tracking-[0.1em] text-white"
+                  >
+                    {t('auth_register_button')}
+                  </button>
+                </div>
+              )}
               <div className="flex gap-4">
                 {locales.map(l => (
                   <button

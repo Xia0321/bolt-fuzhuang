@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { I18nProvider, useI18n } from '@/i18n/I18nContext';
 import { CartProvider } from '@/context/CartContext';
+import { AuthProvider } from '@/context/AuthContext';
 import { StoreProvider, useStore } from '@/context/StoreContext';
 import { NavProvider, useNav } from '@/context/NavContext';
 import { Navbar } from '@/components/Navbar';
@@ -14,6 +15,10 @@ import { OrderPage } from '@/pages/OrderPage';
 import { AboutPage } from '@/pages/AboutPage';
 import { ContentPage } from '@/pages/ContentPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { RegisterPage } from '@/pages/RegisterPage';
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
+import { AccountPage } from '@/pages/AccountPage';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -68,9 +73,13 @@ function AppContent() {
         {route.name === 'product' && <ProductDetailPage slug={route.slug} />}
         {route.name === 'cart' && <CartPage />}
         {route.name === 'checkout' && <CheckoutPage />}
-        {route.name === 'order' && <OrderPage />}
+        {route.name === 'order' && <OrderPage key={route.id ?? ''} id={route.id} />}
         {route.name === 'about' && <AboutPage />}
         {route.name === 'page' && <ContentPage slug={route.slug} />}
+        {route.name === 'login' && <LoginPage next={route.next} />}
+        {route.name === 'register' && <RegisterPage next={route.next} />}
+        {route.name === 'resetPassword' && <ResetPasswordPage email={route.email} token={route.token} />}
+        {route.name === 'account' && <AccountPage tab={route.tab} />}
         {route.name === 'notFound' && <NotFoundPage />}
       </main>
       <Footer />
@@ -83,9 +92,11 @@ function App() {
     <I18nProvider>
       <NavProvider>
         <StoreProvider>
-          <CartProvider>
-            <AppContent />
-          </CartProvider>
+          <AuthProvider>
+            <CartProvider>
+              <AppContent />
+            </CartProvider>
+          </AuthProvider>
         </StoreProvider>
       </NavProvider>
     </I18nProvider>

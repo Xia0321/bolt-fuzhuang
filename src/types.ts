@@ -154,7 +154,60 @@ export interface Checkout {
 }
 
 export interface PlacedOrder {
+  // 订单 UUID，不可猜测，可作为游客查看订单的专属链接
+  id: string;
   number: string;
   total: Money;
   email: string;
+}
+
+export interface SavedAddress extends Address {
+  id: string;
+  isDefaultShipping: boolean;
+}
+
+export interface Customer {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  addresses: SavedAddress[];
+}
+
+export type OrderStatus =
+  | 'DRAFT' | 'UNCONFIRMED' | 'UNFULFILLED' | 'PARTIALLY_FULFILLED' | 'PARTIALLY_RETURNED'
+  | 'RETURNED' | 'FULFILLED' | 'CANCELED' | 'EXPIRED';
+
+export interface OrderSummary {
+  id: string;
+  number: string;
+  created: string;
+  status: OrderStatus;
+  total: Money;
+  itemCount: number;
+  image: string | null;
+}
+
+export interface OrderLine {
+  name: string;
+  variant: string;
+  quantity: number;
+  image: string | null;
+  totalPrice: Money;
+}
+
+export interface Shipment {
+  trackingNumber: string;
+  created: string;
+}
+
+export interface OrderDetail extends OrderSummary {
+  email: string;
+  isPaid: boolean;
+  lines: OrderLine[];
+  subtotal: Money;
+  shipping: Money;
+  shippingAddress: Address | null;
+  shippingMethod: string;
+  shipments: Shipment[];
 }

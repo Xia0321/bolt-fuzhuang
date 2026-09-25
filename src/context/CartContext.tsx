@@ -1,8 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useI18n } from '@/i18n/I18nContext';
+import { useAuth } from '@/context/AuthContext';
 import {
-  addCheckoutLine, createCheckout, fetchCheckout, removeCheckoutLine, updateCheckoutLine,
+  addCheckoutLine, attachCustomer, createCheckout, fetchCheckout, removeCheckoutLine, updateCheckoutLine,
 } from '@/lib/checkout';
+import { CHANNELS } from '@/config';
 import type { Checkout } from '@/types';
 
 interface CartContextValue {
@@ -42,8 +44,11 @@ function writeId(channel: string, id: string | null) {
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const { channel, languageCode } = useI18n();
+  const { user } = useAuth();
   const [checkout, setCheckoutState] = useState<Checkout | null>(null);
   const [loading, setLoading] = useState(true);
+  const attachedRef = useRef('');
+  const prevUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +70,28 @@ export function CartProvider({ children }: { children: ReactNode }) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [channel, languageCode]);
+
+  // 登录后把登录前加购的购物袋关联到账号，下单后订单才会出现在「我的订单」中
+  useEffect(() => {
+    if (!user || !checkout) return;
+    const key = `${user.id}:${checkout.id}`;
+    if (attachedRef.current === key) return;
+    attachedRef.current = key;
+    attachCustomer(checkout.id, languageCode)
+      .then(c => setCheckoutState(c))
+      .catch(() => { /* 关联失败不影响继续购物，下单时按填写的邮箱处理 */ });
+  }, [user, checkout, languageCode]);
+
+  // 退出登录后清空购物袋，避免共用设备时下一位访客看到上一位的购物袋和地址
+  useEffect(() => {
+    const prev = prevUserRef.current;
+    prevUserRef.current = user?.id ?? null;
+    if (prev && !user) {
+      for (const c of CHANNELS) writeId(c.slug, null);
+      setCheckoutState(null);
+      attachedRef.current = '';
+    }
+  }, [user]);
 
   const setCheckout = useCallback((c: Checkout) => {
     writeId(channel, c.id);

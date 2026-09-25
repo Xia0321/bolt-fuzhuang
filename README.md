@@ -67,9 +67,36 @@ cd ~/Desktop/saleor-dashboard && pnpm install && pnpm dev   # http://localhost:9
 
 # 4. 前台
 cp .env.example .env && npm install && npm run dev           # http://localhost:5173
+
+# 5. 顾客注册服务（需要注册功能时启动，配置见下文「顾客账号」）
+node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs   # http://localhost:8100，前台经 Vite 代理 /api 访问
 ```
 
 国内网络安装依赖慢时，可以使用镜像：PyPI 用 `--index-url https://pypi.tuna.tsinghua.edu.cn/simple`，npm/pnpm 用 `--registry=https://registry.npmmirror.com`。
+
+## 顾客账号
+
+登录、找回密码、我的订单、地址簿都直接使用 Saleor 自带的顾客账号，后台「客户」菜单即可管理。游客仍可直接结账，订单完成页的专属链接 `/order/<订单ID>` 游客也能查看订单状态和物流单号。
+
+注册只需邮箱和密码，不做邮箱验证，但要经过注册服务 `deploy/account-gw`：
+
+- **人机验证**：Cloudflare Turnstile，服务端校验
+- **频率限制**：Nginx 每 IP 每分钟 3 次；注册服务每 IP 每小时 5 个、每天 20 个账号，全站每小时 200 个
+- **原理**：Saleor 保持「需要邮箱验证才能登录」。直接调用公开接口 `accountRegister` 注册的账号无法登录；注册服务校验通过后，用 App 令牌把账号标记为已验证
+- 登录防爆破由 Saleor 自带（按 IP 延迟），Nginx 只向 Saleor 传真实连接 IP，防止伪造 `X-Forwarded-For` 绕过
+
+服务器 `/opt/pinso/.env` 需要以下变量，缺少时注册页显示「注册暂未开放」，其余功能不受影响：
+
+| 变量 | 获取方式 |
+|---|---|
+| `TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET` | Cloudflare 控制台 → Turnstile → 添加站点（域名 pinso.top） |
+| `SALEOR_APP_TOKEN` | 后台 → 扩展 → 添加扩展 → 手动创建本地应用，只勾选「管理客户」权限，生成令牌 |
+
+修改后在 `/opt/pinso` 执行 `docker compose -p pinso up -d account-gw` 生效。
+
+本地开发时在 `deploy/account-gw/.env.local`（不提交）中配置同样的变量，并额外设置 `SALEOR_API_URL=http://localhost:8000/graphql/`、`STOREFRONT_URL=http://localhost:5173`；Turnstile 可用官方测试密钥（站点 `1x00000000000000000000AA`，密钥 `1x0000000000000000000000000000000AA`，始终通过）。
+
+邮件服务开通前，找回密码页会如实提示联系客服；开通后把 `src/config.ts` 的 `EMAIL_ENABLED` 改为 `true`。
 
 ## 部署
 
@@ -119,7 +146,7 @@ SALEOR_API_URL=http://<IP>/graphql/ SALEOR_EMAIL=<邮箱> SALEOR_PASSWORD=<密�
 - **支付**：当前使用 Saleor 自带的测试网关（`mirumee.payments.dummy`），不会真实扣款。上线需在后台启用 Stripe 插件并填入密钥，前台在 `CheckoutPage` 接入 Stripe.js 获取支付凭证后传给 `payAndComplete`
 - **图片**：商品、分类、横幅目前是 Pexels 示例图，需要在后台替换成品牌实拍图（商品图建议 3:4 竖图）
 - **政策文本**：隐私政策、服务条款是占位内容
-- **邮件**：订单确认邮件需要在后台配置 SMTP 插件
+- **邮件**：订单确认邮件、找回密码邮件需要在后台配置 SMTP 插件；开通后找回密码也应接入注册服务的频率限制，防止被用来轰炸他人邮箱
 - **价格**：美元、日元价格是按汇率从人民币换算的，需要在后台逐一核对
 - **部署**：生产环境需设置 `SECRET_KEY`、`ALLOWED_HOSTS`、`ALLOWED_CLIENT_HOSTS`、`PUBLIC_URL`，并由 Nginx 提供 `/media/` 静态文件；前台是单页应用，Nginx 需配置 `try_files $uri /index.html`
 - **商品数量**：前台一次读取最多 100 件商品，超过后需要改为分页

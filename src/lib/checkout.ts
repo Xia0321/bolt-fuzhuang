@@ -213,14 +213,14 @@ export async function payAndComplete(checkout: Checkout, gatewayId: string, toke
 
   const done = await saleorFetch<{
     checkoutComplete: {
-      order: { number: string; userEmail: string | null; total: { gross: Money } } | null;
+      order: { id: string; number: string; userEmail: string | null; total: { gross: Money } } | null;
       confirmationNeeded: boolean;
       errors: MutationResult['errors'];
     };
   }>(
     `mutation($id: ID!) {
       checkoutComplete(id: $id) {
-        order { number userEmail total { gross { amount currency } } }
+        order { id number userEmail total { gross { amount currency } } }
         confirmationNeeded
         errors { field message code }
       }
@@ -230,8 +230,24 @@ export async function payAndComplete(checkout: Checkout, gatewayId: string, toke
   throwIfErrors(done.checkoutComplete.errors);
   const order = done.checkoutComplete.order;
   if (!order) throw new Error('Payment requires additional confirmation');
-  return { number: order.number, total: order.total.gross, email: order.userEmail || checkout.email || '' };
+  return { id: order.id, number: order.number, total: order.total.gross, email: order.userEmail || checkout.email || '' };
 }
+
+// 把购物袋关联到当前登录的顾客（需带登录凭证），下单后订单会出现在「我的订单」中
+export async function attachCustomer(id: string, lang: string) {
+  const data = await saleorFetch<{ checkoutCustomerAttach: MutationResult }>(
+    `mutation($id: ID!, $lang: LanguageCodeEnum!) {
+      checkoutCustomerAttach(id: $id) { checkout { ...CheckoutFields } errors { field message code } }
+    } ${CHECKOUT_FIELDS}`,
+    { id, lang },
+  );
+  return unwrap(data.checkoutCustomerAttach);
+}
+
+export const emptyAddress = (country: string): Address => ({
+  firstName: '', lastName: '', streetAddress1: '', streetAddress2: '', city: '', cityArea: '',
+  postalCode: '', country, countryArea: '', phone: '',
+});
 
 export interface Choice { raw: string; verbose: string }
 

@@ -10,6 +10,12 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  // 本地开发时注册接口转发到注册服务（node deploy/account-gw/server.mjs）
+  server: {
+    proxy: {
+      '/api': 'http://localhost:8100',
+    },
+  },
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

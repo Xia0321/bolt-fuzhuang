@@ -1,6 +1,6 @@
 # 应用服务：Saleor API/Worker + PostgreSQL + Redis
 # 反向代理与 HTTPS 由宿主机上的 Nginx + Certbot 负责（配置见 deploy/nginx/）。
-# API 只监听 127.0.0.1:8000，数据库和 Redis 不暴露任何端口。
+# API 只监听 127.0.0.1:8000，注册服务只监听 127.0.0.1:8100，数据库和 Redis 不暴露任何端口。
 # 所有服务 restart: unless-stopped，配合 Docker 开机自启，服务器重启后会自动恢复。
 
 x-saleor: &saleor
@@ -79,6 +79,27 @@ services:
     command: >
       sh -c 'export RSA_PRIVATE_KEY="$$(cat /run/secrets/jwt.pem)" &&
              exec celery --app saleor.celeryconf:app worker -B -E --concurrency=1 --loglevel=info'
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # 顾客注册服务：人机验证与频率限制（代码见 deploy/account-gw/server.mjs）
+  # 只传入需要的变量，不读取整个 .env；未配置 Turnstile 或 App 令牌时注册功能关闭
+  account-gw:
+    image: node:22-alpine
+    restart: unless-stopped
+    command: ["node", "/app/server.mjs"]
+    volumes:
+      - ./account-gw:/app:ro
+    environment:
+      SALEOR_API_URL: http://api:8000/graphql/
+      SALEOR_HOST: localhost
+      STOREFRONT_URL: ${STOREFRONT_URL:-}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
+      SALEOR_APP_TOKEN: ${SALEOR_APP_TOKEN:-}
+    ports:
+      - "127.0.0.1:8100:8100"
     depends_on:
       api:
         condition: service_healthy
