@@ -99,7 +99,8 @@ function request(url, { method = 'POST', headers = {}, body = '' } = {}) {
 
 // auth：使用 App 令牌；headers：额外请求头（转发顾客的登录凭证、客户端 IP）
 async function saleor(query, variables, { auth = false, headers: extra = {} } = {}) {
-  const headers = { 'Content-Type': 'application/json', ...extra };
+  // X-Forwarded-Proto: https 告知 Saleor 原始连接已是 HTTPS，避免其将内网 HTTP 请求 301 重定向
+  const headers = { 'Content-Type': 'application/json', 'X-Forwarded-Proto': 'https', ...extra };
   if (SALEOR_HOST) headers.Host = SALEOR_HOST;
   if (auth) headers.Authorization = `Bearer ${SALEOR_APP_TOKEN}`;
   const res = await request(SALEOR_API_URL, { headers, body: JSON.stringify({ query, variables }) });

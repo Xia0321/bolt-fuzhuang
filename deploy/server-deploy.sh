@@ -105,6 +105,8 @@ fi
 
 step "启动应用容器"
 docker compose -p pinso up -d --remove-orphans
+# account-gw 以卷挂载运行，文件更新后需手动重启才能加载新代码
+docker compose -p pinso restart account-gw
 for i in $(seq 1 60); do
   [ "$(docker compose -p pinso ps api --format '{{.Health}}')" = healthy ] && { echo "✓ API 容器已就绪"; break; }
   [ "$i" = 60 ] && { echo "✗ API 容器未就绪"; docker compose -p pinso logs api --tail 30; exit 1; }
