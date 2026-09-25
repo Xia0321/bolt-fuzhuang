@@ -1,0 +1,43 @@
+# Jenkins Configuration as Code，由 setup.sh 替换 __DOMAIN__ 等占位符后写入 /var/lib/jenkins/casc.yaml
+# 每次 Jenkins 启动都会按此文件重新应用配置，在界面上修改的同类设置会被覆盖
+jenkins:
+  systemMessage: "PINSO Denim 部署。点击任务「PINSO 部署」→「立即构建」即可发布 GitHub main 分支的最新代码。"
+  numExecutors: 1
+  mode: NORMAL
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: admin
+          name: 管理员
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+security:
+  gitHostKeyVerificationConfiguration:
+    sshHostKeyVerificationStrategy: "knownHostsFileVerificationStrategy"
+
+unclassified:
+  location:
+    url: "https://__DOMAIN__/jenkins/"
+
+jobs:
+  - script: |
+      pipelineJob('__JOB_NAME__') {
+        displayName('PINSO 部署')
+        description('拉取 GitHub main 分支 → 打包前台 → 部署到 https://__DOMAIN__/')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('__REPO_URL__') }
+                branch('*/main')
+              }
+            }
+            scriptPath('deploy/Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }

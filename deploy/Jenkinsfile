@@ -1,0 +1,39 @@
+// Jenkins 流水线：拉取 GitHub main → 打包前台 → 部署到本机
+// 后台页面打包需要约 8GB 内存，不在服务器上打包，需要更新时在本地执行 deploy/deploy.sh
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    stages {
+        stage('打包前台') {
+            steps {
+                // 在 Node 容器中打包，服务器上无需安装 Node
+                sh '''
+                    docker run --rm -u "$(id -u):$(id -g)" \
+                      -v "$WORKSPACE":/app -w /app \
+                      -e VITE_SALEOR_API_URL=/graphql/ \
+                      -e npm_config_cache=/app/.npm-cache \
+                      node:20-alpine sh -c "npm ci --no-audit --no-fund && npm run build"
+                '''
+            }
+        }
+
+        stage('部署') {
+            steps {
+                // 部署需要 root（更新 Nginx、证书等），sudo 规则只允许执行本工作区中的部署脚本
+                sh 'sudo /bin/bash "$WORKSPACE/deploy/server-deploy.sh" "$WORKSPACE"'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '部署完成：https://pinso.top/'
+        }
+    }
+}
