@@ -42,7 +42,13 @@ export function Captcha({ siteKey, onToken, resetKey }: { siteKey: string; onTok
   onTokenRef.current = onToken;
   const [failed, setFailed] = useState(false);
 
+  // 未配置人机验证时（siteKey 为空），直接提供占位令牌，不加载 Turnstile 脚本
   useEffect(() => {
+    if (!siteKey) onTokenRef.current('bypass');
+  }, [siteKey]);
+
+  useEffect(() => {
+    if (!siteKey) return;
     let cancelled = false;
     loadTurnstile()
       .then(turnstile => {
@@ -71,6 +77,7 @@ export function Captcha({ siteKey, onToken, resetKey }: { siteKey: string; onTok
     }
   }, [resetKey]);
 
+  if (!siteKey) return null;
   if (failed) return <p className="text-[13px] text-red-600">{t('auth_captcha_load_failed')}</p>;
   return <div ref={ref} className="min-h-[65px]" />;
 }

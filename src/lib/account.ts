@@ -87,12 +87,15 @@ export function fetchAccountConfig(): Promise<AccountConfig> {
   return configPromise;
 }
 
-// null：加载中
+// null：加载中；每次组件挂载都重新拉取，确保绕过开关即时生效
 export function useAccountConfig(): AccountConfig | null {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   useEffect(() => {
     let cancelled = false;
-    fetchAccountConfig().then(c => { if (!cancelled) setConfig(c); });
+    fetch(`${ACCOUNT_API_URL}/config`)
+      .then(res => (res.ok ? res.json() : Promise.reject()))
+      .catch(() => ({ captchaSiteKey: '', registerEnabled: false }))
+      .then((c: AccountConfig) => { if (!cancelled) setConfig(c); });
     return () => { cancelled = true; };
   }, []);
   return config;
