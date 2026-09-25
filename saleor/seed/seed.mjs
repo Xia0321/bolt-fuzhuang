@@ -388,11 +388,21 @@ async function ensurePageStructure() {
     });
     attrIds[slug] = attr.id;
   }
-  const d = await gql(`{ pageTypes(first: 100) { edges { node { id slug } } } }`);
+  const d = await gql(`{ pageTypes(first: 100) { edges { node { id slug attributes { slug } } } } }`);
   const typeIds = {};
   for (const [slug, attrs] of Object.entries(data.pageTypes)) {
-    let id = d.pageTypes.edges.find(e => e.node.slug === slug)?.node.id;
-    if (!id) {
+    const existing = d.pageTypes.edges.find(e => e.node.slug === slug)?.node;
+    let id = existing?.id;
+    if (existing) {
+      // 已有的页面类型补上后来新增的属性
+      const missing = attrs.filter(a => !existing.attributes.some(x => x.slug === a));
+      if (missing.length) {
+        await gql(`mutation($id: ID!, $attrs: [ID!]!) {
+          pageAttributeAssign(pageTypeId: $id, attributeIds: $attrs) { errors { field message } }
+        }`, { id, attrs: missing.map(a => attrIds[a]) });
+        log('页面类型属性', `${slug}: ${missing.join(', ')}`);
+      }
+    } else {
       const c = await gql(`mutation($input: PageTypeCreateInput!) {
         pageTypeCreate(input: $input) { pageType { id } errors { field message } }
       }`, { input: { name: data.pageTypeNames[slug], slug, addAttributes: attrs.map(a => attrIds[a]) } });

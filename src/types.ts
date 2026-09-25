@@ -76,6 +76,7 @@ export interface SiteSettings {
   contactPhone: string;
   contactAddress: string;
   instagramUrl: string;
+  faviconUrl: string | null;
 }
 
 export interface ContentPage {

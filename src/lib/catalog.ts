@@ -245,6 +245,7 @@ function mapSite(page: RawPage | undefined): SiteSettings {
     contactPhone: text('contact-phone'),
     contactAddress: text('contact-address'),
     instagramUrl: text('instagram-url'),
+    faviconUrl: a.favicon?.file?.url ?? null,
   };
 }
 

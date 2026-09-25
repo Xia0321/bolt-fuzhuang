@@ -172,7 +172,7 @@ export const products = [
 
 // 页面类型及其属性。slug 是前端读取时的约定，不要改
 export const pageTypes = {
-  'site-settings': ['brand-name', 'tagline', 'contact-email', 'contact-phone', 'contact-address', 'instagram-url'],
+  'site-settings': ['brand-name', 'tagline', 'contact-email', 'contact-phone', 'contact-address', 'instagram-url', 'favicon'],
   banner: ['eyebrow', 'subtitle', 'button-text', 'button-link', 'image'],
   feature: ['placement', 'sort-order', 'icon', 'value', 'subtitle'],
   content: [],
@@ -198,6 +198,8 @@ export const pageAttributes = {
   'button-text': { name: 'Button Text', inputType: 'PLAIN_TEXT', translatable: true },
   'button-link': { name: 'Button Link', inputType: 'PLAIN_TEXT' },
   image: { name: 'Image', inputType: 'FILE' },
+  // 浏览器标签页图标，建议上传正方形 PNG（≥ 64×64）或 ICO；不上传时使用前台自带的默认图标
+  favicon: { name: 'Favicon', inputType: 'FILE' },
   value: { name: 'Value', inputType: 'PLAIN_TEXT', translatable: true },
   'sort-order': { name: 'Sort Order', inputType: 'NUMERIC' },
   placement: { name: 'Placement', inputType: 'DROPDOWN', values: ['home-values', 'about-stats'] },

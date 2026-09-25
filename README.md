@@ -32,7 +32,7 @@
 | 首页「精选单品」及「精选」角标 | Catalog → Collections → `featured` |
 | 顶部导航、首页分类区顺序 | Configuration → Navigation → `navbar` |
 | 页脚「品牌」栏 / 底部链接 | Navigation → `footer` / `footer-legal` |
-| 品牌名、标语、联系邮箱/电话/地址、Instagram | Modeling → 页面 `site-settings` |
+| 品牌名、标语、联系邮箱/电话/地址、Instagram、网站图标（Favicon） | Modeling → 页面 `site-settings` |
 | 首页大图（文字、按钮、图片） | 页面 `home-hero` |
 | 首页造型画册横幅 | 页面 `home-lookbook` |
 | 品牌故事页（横幅 + 正文） | 页面 `about` |

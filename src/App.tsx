@@ -25,6 +25,18 @@ function AppContent() {
     if (store) document.title = store.site.tagline ? `${store.site.brandName} — ${store.site.tagline}` : store.site.brandName;
   }, [store]);
 
+  // 后台上传了网站图标时替换 index.html 中的默认图标
+  const faviconUrl = store?.site.faviconUrl;
+  useEffect(() => {
+    if (!faviconUrl) return;
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (link) {
+      link.removeAttribute('type');
+      link.removeAttribute('sizes');
+      link.href = faviconUrl;
+    }
+  }, [faviconUrl]);
+
   // 首次加载显示 loading；切换语言/币种时保留旧内容，避免闪屏
   if (!store && loading) {
     return (
