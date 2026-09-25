@@ -6,7 +6,7 @@
 #   - jenkins 用户加入 docker 组（在容器中打包前台），并通过 sudo 规则只允许执行部署脚本
 #
 # 用法：bash setup.sh <域名>
-#   管理员密码首次随机生成，保存在 /etc/jenkins/admin.env
+#   管理员账号默认 admin、密码首次随机生成，保存在 /etc/jenkins/admin.env；修改该文件后重启 jenkins 即可更换账号密码
 set -euo pipefail
 
 DOMAIN="${1:?用法：setup.sh <域名>}"
@@ -54,7 +54,10 @@ sudo -u jenkins java -jar "$pm" --war "$war" --plugin-download-directory "$JENKI
 
 step "写入配置"
 if [ ! -f /etc/jenkins/admin.env ]; then
-  echo "JENKINS_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)" > /etc/jenkins/admin.env
+  cat > /etc/jenkins/admin.env <<EOF
+JENKINS_ADMIN_USER=admin
+JENKINS_ADMIN_PASSWORD=$(openssl rand -base64 18 | tr -d '/+=' | cut -c1-20)
+EOF
 fi
 chown root:jenkins /etc/jenkins/admin.env
 chmod 640 /etc/jenkins/admin.env

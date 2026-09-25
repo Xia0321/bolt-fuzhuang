@@ -8,7 +8,8 @@ jenkins:
     local:
       allowsSignup: false
       users:
-        - id: admin
+        # 账号和密码只保存在服务器 /etc/jenkins/admin.env 中
+        - id: "${JENKINS_ADMIN_USER:-admin}"
           name: 管理员
           password: "${JENKINS_ADMIN_PASSWORD}"
   authorizationStrategy:
