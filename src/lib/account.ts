@@ -109,6 +109,17 @@ export async function register(input: { email: string; password: string; captcha
   if (!res.ok || !body?.ok) throw new SaleorError(body?.message || `HTTP ${res.status}`, body?.code || 'UNKNOWN');
 }
 
+// 点击注册确认邮件中的链接后确认账号
+export async function confirmAccount(email: string, token: string) {
+  const data = await saleorFetch<{ confirmAccount: { errors: Errors } }>(
+    `mutation($email: String!, $token: String!) {
+      confirmAccount(email: $email, token: $token) { errors { field message code } }
+    }`,
+    { email, token },
+  );
+  throwIfErrors(data.confirmAccount.errors);
+}
+
 // ---------- 找回密码 ----------
 
 export async function requestPasswordReset(email: string, channel: string) {

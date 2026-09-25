@@ -11,10 +11,13 @@ export type Route =
   | { name: 'about' }
   | { name: 'page'; slug: string }
   // next：登录/注册成功后返回的站内路径
-  | { name: 'login'; next?: string }
+  // email：预填邮箱（确认账号后跳转）
+  | { name: 'login'; next?: string; email?: string }
   | { name: 'register'; next?: string }
   // 带 email 与 token 时为设置新密码（重置邮件中的链接）
   | { name: 'resetPassword'; email?: string; token?: string }
+  // 注册确认邮件中的链接
+  | { name: 'confirmAccount'; email?: string; token?: string }
   | { name: 'account'; tab?: 'orders' | 'addresses' }
   | { name: 'notFound' };
 
@@ -44,11 +47,13 @@ export function parsePath(pathname: string, search = ''): Route {
     case 'pages':
       return parts[1] ? { name: 'page', slug: parts[1] } : { name: 'notFound' };
     case 'login':
-      return { name: 'login', next };
+      return { name: 'login', next, email: query.get('email') ?? undefined };
     case 'register':
       return { name: 'register', next };
     case 'reset-password':
       return { name: 'resetPassword', email: query.get('email') ?? undefined, token: query.get('token') ?? undefined };
+    case 'confirm-account':
+      return { name: 'confirmAccount', email: query.get('email') ?? undefined, token: query.get('token') ?? undefined };
     case 'account':
       return { name: 'account', tab: parts[1] === 'addresses' ? 'addresses' : 'orders' };
     default:
@@ -71,9 +76,10 @@ export function routeToPath(route: Route): string {
     case 'order': return route.id ? `/order/${route.id}` : '/order';
     case 'about': return '/about';
     case 'page': return `/pages/${route.slug}`;
-    case 'login': return withQuery('/login', { next: route.next });
+    case 'login': return withQuery('/login', { next: route.next, email: route.email });
     case 'register': return withQuery('/register', { next: route.next });
     case 'resetPassword': return withQuery('/reset-password', { email: route.email, token: route.token });
+    case 'confirmAccount': return withQuery('/confirm-account', { email: route.email, token: route.token });
     case 'account': return route.tab === 'addresses' ? '/account/addresses' : '/account';
     case 'notFound': return '/';
   }

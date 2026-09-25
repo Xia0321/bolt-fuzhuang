@@ -74,6 +74,7 @@ export function OrderPage({ id: routeId }: { id?: string }) {
               <Check size={28} strokeWidth={1.5} />
             </div>
             <h1 className="text-2xl md:text-3xl font-light tracking-tight text-neutral-900 mb-3">{t('order_thanks')}</h1>
+            {order.email && <p className="text-[14px] text-neutral-500 max-w-md mx-auto leading-relaxed mb-1">{t('order_email_sent', { email: order.email })}</p>}
             <p className="text-[14px] text-neutral-500 max-w-md mx-auto leading-relaxed">{t('order_save_link')}</p>
             {!user && (
               <p className="text-[14px] text-neutral-500 mt-2">

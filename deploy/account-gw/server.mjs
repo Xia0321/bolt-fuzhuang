@@ -1,8 +1,7 @@
 // 注册服务：为顾客注册加上人机验证（Cloudflare Turnstile）和频率限制。
 //
-// Saleor 设置为「需要邮箱验证才能登录」，直接调用公开的 accountRegister 得到的账号无法登录；
-// 只有经过本服务（验证通过、未超频率）的注册，才由本服务用 App 令牌标记为已验证。
-// 顾客感觉不到邮箱验证这一步。
+// 注册后由 Saleor 自带的邮件插件发送确认邮件，顾客点击邮件中的链接（前台 /confirm-account）完成确认后才能登录。
+// 本服务负责在调用 accountRegister 之前拦住脚本批量注册，避免消耗发信额度。
 //
 // 接口：
 //   GET  /api/register/config  → { enabled, captchaSiteKey }
@@ -11,10 +10,10 @@
 //
 // 环境变量：
 //   TURNSTILE_SITE_KEY / TURNSTILE_SECRET  Cloudflare Turnstile 站点密钥与密钥
-//   SALEOR_APP_TOKEN   Saleor 后台「应用」中创建的本地 App 令牌，只需「管理客户」权限
+//   SALEOR_APP_TOKEN   Saleor 后台「扩展」中创建的本地应用令牌，只需「管理客户」权限（查询邮箱是否已注册）
 //   SALEOR_API_URL     默认 http://api:8000/graphql/（Compose 内网）
 //   SALEOR_HOST        请求 Saleor 时使用的 Host 头，需在 Saleor 的 ALLOWED_HOSTS 中，默认 localhost
-//   STOREFRONT_URL     前台地址，作为 accountRegister 的 redirectUrl，如 https://pinso.top
+//   STOREFRONT_URL     前台地址，确认邮件中的链接指向 <STOREFRONT_URL>/confirm-account
 //   PORT               默认 8100
 //
 // 不依赖任何 npm 包，node server.mjs 即可运行。
@@ -142,7 +141,8 @@ async function register(input, ip) {
   const found = await saleor(`query($email: String!) { user(email: $email) { id isConfirmed } }`, { email }, { auth: true });
   if (found.user?.isConfirmed) throw new Reject('EMAIL_EXISTS');
   if (found.user) {
-    // 未验证的账号只可能来自绕过本服务直接调用接口的注册（无法登录），删除后重新注册，防止他人抢注邮箱
+    // 未确认的账号（没点确认链接，或他人抢先用该邮箱注册）删除后重新注册，会重新发送确认邮件，
+    // 新密码以本次填写的为准，防止他人抢注邮箱
     const del = await saleor(`mutation($id: ID!) { customerDelete(id: $id) { errors { code message } } }`, { id: found.user.id }, { auth: true });
     if (del.customerDelete.errors.length) throw new Error(`customerDelete: ${del.customerDelete.errors[0].message}`);
     log({ ip, event: 'unconfirmed_replaced', domain: email.split('@')[1] });
@@ -154,7 +154,7 @@ async function register(input, ip) {
     input: {
       email,
       password,
-      redirectUrl: `${STOREFRONT_URL}/login`,
+      redirectUrl: `${STOREFRONT_URL}/confirm-account`,
       ...(LANGUAGES.has(input.languageCode) ? { languageCode: input.languageCode } : {}),
       ...(typeof input.channel === 'string' && /^[a-z0-9-]{1,50}$/.test(input.channel) ? { channel: input.channel } : {}),
     },
@@ -166,17 +166,6 @@ async function register(input, ip) {
     if (err.field === 'email') throw new Reject('INVALID_EMAIL', 400, err.message);
     throw new Error(`accountRegister: ${err.code} ${err.message}`);
   }
-  // 开启邮箱验证时 accountRegister 不返回用户（防止探测邮箱），按邮箱查出刚创建的账号
-  const created = await saleor(`query($email: String!) { user(email: $email) { id isConfirmed } }`, { email }, { auth: true });
-  if (!created.user) throw new Error('accountRegister: user not created');
-  if (created.user.isConfirmed) throw new Reject('EMAIL_EXISTS');
-  const { id } = created.user;
-
-  const upd = await saleor(`mutation($id: ID!) {
-    customerUpdate(id: $id, input: { isConfirmed: true }) { errors { code message } }
-  }`, { id }, { auth: true });
-  if (upd.customerUpdate.errors.length) throw new Error(`customerUpdate: ${upd.customerUpdate.errors[0].message}`);
-
   record(`signup:${ip}`);
   record('signup:all');
 }

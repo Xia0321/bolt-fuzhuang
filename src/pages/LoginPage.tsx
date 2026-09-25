@@ -7,11 +7,11 @@ import { AuthLayout } from '@/components/AuthLayout';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
 import { inputClass } from '@/components/formStyles';
 
-export function LoginPage({ next }: { next?: string }) {
+export function LoginPage({ next, email: initialEmail }: { next?: string; email?: string }) {
   const { t } = useI18n();
   const { navigate, navigateUrl } = useNav();
   const { user, login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(initialEmail ?? '');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');

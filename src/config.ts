@@ -6,8 +6,8 @@ export const SALEOR_API_URL: string = import.meta.env.VITE_SALEOR_API_URL || 'ht
 // 注册服务（deploy/account-gw），与前台同源；本地开发由 Vite 代理到 localhost:8100
 export const ACCOUNT_API_URL: string = import.meta.env.VITE_ACCOUNT_API_URL || '/api';
 
-// 服务器尚未配置邮件服务。开通后改为 true，找回密码页才会发送重置邮件
-export const EMAIL_ENABLED = false;
+// 邮件服务（Saleor 邮件插件 + Resend）已开通；关闭时找回密码页改为提示联系客服
+export const EMAIL_ENABLED = true;
 
 // 前端语言 → Saleor 翻译语言代码
 export const LANGUAGE_CODES: Record<Locale, string> = {

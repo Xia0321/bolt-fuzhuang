@@ -7,7 +7,7 @@ import { AuthLayout } from '@/components/AuthLayout';
 import { Captcha } from '@/components/Captcha';
 import { ErrorNote, Field, PrimaryButton } from '@/components/Form';
 import { inputClass } from '@/components/formStyles';
-import { Loader2 } from 'lucide-react';
+import { Loader2, MailCheck } from 'lucide-react';
 
 const MIN_PASSWORD = 8;
 
@@ -24,6 +24,8 @@ export function RegisterPage({ next }: { next?: string }) {
   const [captchaReset, setCaptchaReset] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // 注册成功后显示「请查收确认邮件」
+  const [sentTo, setSentTo] = useState('');
 
   useEffect(() => {
     fetchRegisterConfig().then(setConfig).catch(() => setConfig({ enabled: false, captchaSiteKey: '' }));
@@ -47,6 +49,7 @@ export function RegisterPage({ next }: { next?: string }) {
     setBusy(true);
     try {
       await register(email.trim(), password, captchaToken);
+      setSentTo(email.trim());
     } catch (err) {
       const key = authErrorKey(err);
       setError(key ? t(key) : err instanceof Error ? err.message : t('error_generic'));
@@ -58,7 +61,17 @@ export function RegisterPage({ next }: { next?: string }) {
   };
 
   let body;
-  if (!config) {
+  if (sentTo) {
+    body = (
+      <div className="text-center">
+        <div className="inline-flex items-center justify-center w-14 h-14 mb-5 rounded-full bg-neutral-900 text-white">
+          <MailCheck size={24} strokeWidth={1.5} />
+        </div>
+        <p className="text-[14px] text-neutral-600 leading-relaxed">{t('register_check_email', { email: sentTo })}</p>
+        <p className="text-[13px] text-neutral-400 leading-relaxed mt-3">{t('register_check_email_hint')}</p>
+      </div>
+    );
+  } else if (!config) {
     body = <div className="flex justify-center py-10"><Loader2 size={20} className="animate-spin text-neutral-400" /></div>;
   } else if (!config.enabled) {
     body = <ErrorNote>{t('auth_err_DISABLED')}</ErrorNote>;

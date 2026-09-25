@@ -56,6 +56,7 @@ echo "docker $(docker version --format '{{.Server.Version}}') · $(nginx -v 2>&1
 step "更新文件"
 cp "$SRC/deploy/docker-compose.yml" "$REMOTE_DIR/"
 rsync -a --delete "$SRC/deploy/account-gw/" "$REMOTE_DIR/account-gw/"
+rsync -a --delete "$SRC/deploy/saleor/" "$REMOTE_DIR/saleor/"
 rsync -a --delete "$SRC/deploy/nginx/" "$REMOTE_DIR/nginx/"
 rsync -a --delete "$SRC/dist/" "$REMOTE_DIR/www/storefront/"
 if [ -f "$SRC/dashboard-dist/index.html" ]; then
@@ -109,6 +110,15 @@ for i in $(seq 1 60); do
   [ "$i" = 60 ] && { echo "✗ API 容器未就绪"; docker compose -p pinso logs api --tail 30; exit 1; }
   sleep 5
 done
+
+step "配置邮件服务"
+# 读取 .env 中的 RESEND_API_KEY / MAIL_FROM，启用 Saleor 自带的邮件插件（未配置时跳过）
+if grep -q "^RESEND_API_KEY=." .env && grep -q "^MAIL_FROM=." .env; then
+  docker compose -p pinso exec -T api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell' \
+    < saleor/setup_email.py 2>&1 | grep -E "已启用|测试邮件|跳过|Error|error" || true
+else
+  echo "提示：.env 中未配置 RESEND_API_KEY / MAIL_FROM，邮件服务未启用"
+fi
 
 step "配置 Nginx 与 HTTPS 证书"
 cp nginx/locations.conf nginx/ssl.conf nginx/security-headers.conf /etc/nginx/pinso/

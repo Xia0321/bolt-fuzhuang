@@ -96,7 +96,32 @@ node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs   # ht
 
 本地开发时在 `deploy/account-gw/.env.local`（不提交）中配置同样的变量，并额外设置 `SALEOR_API_URL=http://localhost:8000/graphql/`、`STOREFRONT_URL=http://localhost:5173`；Turnstile 可用官方测试密钥（站点 `1x00000000000000000000AA`，密钥 `1x0000000000000000000000000000000AA`，始终通过）。
 
-邮件服务开通前，找回密码页会如实提示联系客服；开通后把 `src/config.ts` 的 `EMAIL_ENABLED` 改为 `true`。
+注册后 Saleor 会发送确认邮件，顾客点击链接（前台 `/confirm-account`）确认后才能登录；忘记密码时发送重置链接（前台 `/reset-password`）。
+
+## 邮件
+
+使用 Saleor 自带的邮件插件（User emails / Admin emails），经 [Resend](https://resend.com) 的 SMTP 发出，发件域名 pinso.top 已在 Resend 验证。会发送：注册确认、找回密码、订单详情、支付确认、发货通知（含物流单号）等，模板为 Saleor 默认的英文模板，可在后台「扩展 → User emails」按渠道修改。
+
+服务器 `/opt/pinso/.env` 需要：
+
+```
+RESEND_API_KEY=re_xxx
+MAIL_FROM=notice@pinso.top
+MAIL_SENDER_NAME=PINSO Denim
+```
+
+每次部署时 `deploy/server-deploy.sh` 会执行 `deploy/saleor/setup_email.py` 把上述配置写入插件（保存时会实际登录一次 SMTP 校验）。手动执行并发送测试邮件：
+
+```bash
+cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resend.dev api \
+  sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell' < saleor/setup_email.py
+```
+
+本地开发把同样的变量写在 `saleor/local/.env.local`（不提交）。
+
+- 额度：Resend 免费版每天 100 封、每月 3,000 封，超出后发不出去，订单多了需要升级套餐
+- Saleor 发信失败不会重试，只记录在 worker 日志中（`docker compose -p pinso logs worker`）
+- 注册确认邮件同一邮箱只在首次注册时发送；找回密码同一账号 15 分钟内只发一次
 
 ## 部署
 
@@ -146,7 +171,7 @@ SALEOR_API_URL=http://<IP>/graphql/ SALEOR_EMAIL=<邮箱> SALEOR_PASSWORD=<密�
 - **支付**：当前使用 Saleor 自带的测试网关（`mirumee.payments.dummy`），不会真实扣款。上线需在后台启用 Stripe 插件并填入密钥，前台在 `CheckoutPage` 接入 Stripe.js 获取支付凭证后传给 `payAndComplete`
 - **图片**：商品、分类、横幅目前是 Pexels 示例图，需要在后台替换成品牌实拍图（商品图建议 3:4 竖图）
 - **政策文本**：隐私政策、服务条款是占位内容
-- **邮件**：订单确认邮件、找回密码邮件需要在后台配置 SMTP 插件；开通后找回密码也应接入注册服务的频率限制，防止被用来轰炸他人邮箱
+- **邮件模板**：目前是 Saleor 默认的英文模板，需要按品牌风格和中日英三语修改
 - **价格**：美元、日元价格是按汇率从人民币换算的，需要在后台逐一核对
 - **部署**：生产环境需设置 `SECRET_KEY`、`ALLOWED_HOSTS`、`ALLOWED_CLIENT_HOSTS`、`PUBLIC_URL`，并由 Nginx 提供 `/media/` 静态文件；前台是单页应用，Nginx 需配置 `try_files $uri /index.html`
 - **商品数量**：前台一次读取最多 100 件商品，超过后需要改为分页

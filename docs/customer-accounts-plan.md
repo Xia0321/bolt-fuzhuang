@@ -191,3 +191,15 @@ Saleor 保持「需要邮箱验证才能登录」的设置。这样任何人直�
 1. Cloudflare Turnstile 站点密钥与密钥（域名 pinso.top）
 2. Saleor 后台「扩展」中创建只有「管理客户」权限的本地应用令牌
 3. 写入服务器 `/opt/pinso/.env`：`TURNSTILE_SITE_KEY`、`TURNSTILE_SECRET`、`SALEOR_APP_TOKEN`
+
+## 第二步：邮件（2026-09-25）
+
+用户决定使用 Saleor 自带的邮件插件，经 Resend SMTP（发件 notice@pinso.top）发送，注册确认与找回密码采用邮件链接：
+
+- 注册：邮箱 + 密码 + 确认密码 + 人机验证 → 注册服务调用 `accountRegister`（redirectUrl 为 `/confirm-account`）→ Saleor 发确认邮件 → 顾客点链接，前台调用 `confirmAccount` → 登录。注册服务不再自动确认账号
+- 找回密码：`requestPasswordReset` → Saleor 发重置邮件 → `/reset-password?email=&token=` 设置新密码并登录；前台 `EMAIL_ENABLED = true`
+- 订单：下单后发订单详情与支付确认，发货（勾选通知顾客）后发发货通知（含物流单号）
+- 配置：`deploy/saleor/setup_email.py` 从 `.env` 读取 `RESEND_API_KEY`、`MAIL_FROM`、`MAIL_SENDER_NAME`，启用各渠道的 User emails 插件和 Admin emails 插件；部署脚本每次执行
+- 本地已用 Resend 测试地址 delivered@resend.dev 实测：测试邮件、注册确认、支付确认、订单详情、发货通知、找回密码均显示 delivered，确认链接和重置链接在前台可正常完成流程
+
+已知限制：模板为 Saleor 默认英文模板；发信失败不重试；Resend 免费版每天 100 封；绕过人机验证直接调用公开接口批量注册会消耗发信额度（同一邮箱只发一次确认邮件，找回密码同一账号 15 分钟一次）。

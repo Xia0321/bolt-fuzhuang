@@ -9,6 +9,7 @@ interface AuthContextValue {
   // 页面加载时恢复登录状态完成前为 false，避免已登录用户被误判为未登录
   ready: boolean;
   login: (email: string, password: string) => Promise<void>;
+  // 注册后需点击确认邮件中的链接才能登录
   register: (email: string, password: string, captchaToken: string) => Promise<void>;
   logout: () => void;
   // 地址簿修改、设置新密码后更新
@@ -46,11 +47,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await reloadUser();
   }, [reloadUser]);
 
-  // 注册成功后直接登录
   const register = useCallback(async (email: string, password: string, captchaToken: string) => {
     await registerRequest({ email, password, captchaToken, languageCode, channel });
-    await login(email, password);
-  }, [channel, languageCode, login]);
+  }, [channel, languageCode]);
 
   const logout = useCallback(() => {
     logoutRequest();

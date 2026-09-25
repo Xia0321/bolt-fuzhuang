@@ -19,6 +19,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { AccountPage } from '@/pages/AccountPage';
+import { ConfirmAccountPage } from '@/pages/ConfirmAccountPage';
 import { Loader2 } from 'lucide-react';
 
 function AppContent() {
@@ -76,7 +77,8 @@ function AppContent() {
         {route.name === 'order' && <OrderPage key={route.id ?? ''} id={route.id} />}
         {route.name === 'about' && <AboutPage />}
         {route.name === 'page' && <ContentPage slug={route.slug} />}
-        {route.name === 'login' && <LoginPage next={route.next} />}
+        {route.name === 'login' && <LoginPage next={route.next} email={route.email} />}
+        {route.name === 'confirmAccount' && <ConfirmAccountPage email={route.email} token={route.token} />}
         {route.name === 'register' && <RegisterPage next={route.next} />}
         {route.name === 'resetPassword' && <ResetPasswordPage email={route.email} token={route.token} />}
         {route.name === 'account' && <AccountPage tab={route.tab} />}
