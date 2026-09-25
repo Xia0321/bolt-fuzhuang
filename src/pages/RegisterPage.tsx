@@ -78,13 +78,13 @@ export function RegisterPage({ next }: { next?: string }) {
       <form onSubmit={submit} className="space-y-4">
         {error && <ErrorNote>{error}</ErrorNote>}
         <Field label={t('checkout_email')} required>
-          <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+          <input type="email" className={inputClass} required value={email} onChange={e => { setEmail(e.target.value); setError(''); }} autoComplete="email" />
         </Field>
         <Field label={t('auth_password')} required hint={t('auth_password_hint')}>
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'} className={inputClass} required minLength={MIN_PASSWORD}
-              value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password"
+              value={password} onChange={e => { setPassword(e.target.value); setError(''); }} autoComplete="new-password"
             />
             <button type="button" tabIndex={-1} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -95,7 +95,7 @@ export function RegisterPage({ next }: { next?: string }) {
           <div className="relative">
             <input
               type={showConfirm ? 'text' : 'password'} className={`${inputClass} ${mismatch ? 'border-red-400 focus:border-red-500' : ''}`} required
-              value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password"
+              value={confirm} onChange={e => { setConfirm(e.target.value); setError(''); }} autoComplete="new-password"
             />
             <button type="button" tabIndex={-1} onClick={() => setShowConfirm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
               {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}

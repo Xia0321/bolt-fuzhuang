@@ -53,11 +53,11 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
       <form onSubmit={submit} className="space-y-4">
         {error && <ErrorNote>{error}</ErrorNote>}
         <Field label={t('checkout_email')} required>
-          <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
+          <input type="email" className={inputClass} required value={email} onChange={e => { setEmail(e.target.value); setError(''); }} autoComplete="email" />
         </Field>
         <Field label={t('auth_password')} required>
           <div className="relative">
-            <input type={showPassword ? 'text' : 'password'} className={inputClass} required value={password} onChange={e => setPassword(e.target.value)} autoComplete="current-password" />
+            <input type={showPassword ? 'text' : 'password'} className={inputClass} required value={password} onChange={e => { setPassword(e.target.value); setError(''); }} autoComplete="current-password" />
             <button type="button" tabIndex={-1} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
               {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
