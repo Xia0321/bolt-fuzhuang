@@ -141,12 +141,12 @@ const str = v => (typeof v === 'string' ? v : '');
 const cleanEmail = v => str(v).trim().toLowerCase();
 const validChannel = v => (typeof v === 'string' && /^[a-z0-9-]{1,50}$/.test(v) ? v : undefined);
 
-// 先查频率再调用验证服务，被限流的请求不消耗外部调用
+// 先查频率再调用验证服务，被限流的请求不消耗外部调用；验证通过后再计数，避免 Cloudflare 故障误伤合法用户
 async function requireCaptcha(action, token, ip, perHour) {
   if (!token) throw new Reject('CAPTCHA_FAILED');
   if (count(`${action}:${ip}`, HOUR) >= perHour) throw new Reject('RATE_LIMITED', 429);
-  record(`${action}:${ip}`);
   if (!(await verifyCaptcha(token, ip))) throw new Reject('CAPTCHA_FAILED');
+  record(`${action}:${ip}`);
 }
 
 // ---------- 注册 ----------

@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useI18n } from '@/i18n/I18nContext';
 import { useNav } from '@/context/NavContext';
 import { useAuth } from '@/context/AuthContext';
@@ -79,6 +80,8 @@ function SetPasswordForm({ email, token }: { email: string; token: string }) {
   const { reloadUser } = useAuth();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -105,10 +108,20 @@ function SetPasswordForm({ email, token }: { email: string; token: string }) {
       <form onSubmit={submit} className="space-y-4">
         {error && <ErrorNote>{error}</ErrorNote>}
         <Field label={t('auth_password')} required hint={t('auth_password_hint')}>
-          <input type="password" className={inputClass} required minLength={MIN_PASSWORD} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
+          <div className="relative">
+            <input type={showPassword ? 'text' : 'password'} className={inputClass} required minLength={MIN_PASSWORD} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" />
+            <button type="button" tabIndex={-1} onClick={() => setShowPassword(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
         <Field label={t('auth_password_confirm')} required>
-          <input type="password" className={inputClass} required value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" />
+          <div className="relative">
+            <input type={showConfirm ? 'text' : 'password'} className={inputClass} required value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" />
+            <button type="button" tabIndex={-1} onClick={() => setShowConfirm(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+              {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
         </Field>
         <PrimaryButton busy={busy}>{t('reset_new_button')}</PrimaryButton>
       </form>

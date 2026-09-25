@@ -23,7 +23,7 @@ from saleor.plugins.user_email.plugin import UserEmailPlugin
 
 api_key = os.environ.get("RESEND_API_KEY", "").strip()
 sender = os.environ.get("MAIL_FROM", "").strip()
-sender_name = os.environ.get("MAIL_SENDER_NAME", "").strip() or "PINSO Denim"
+sender_name = os.environ.get("MAIL_SENDER_NAME", "").strip() or "PINSO"
 test_to = os.environ.get("MAIL_TEST_TO", "").strip()
 
 if not api_key or not sender:

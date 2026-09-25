@@ -125,6 +125,7 @@ fi
 step "配置 Nginx 与 HTTPS 证书"
 cp nginx/locations.conf nginx/ssl.conf nginx/security-headers.conf /etc/nginx/pinso/
 cp nginx/ratelimit.conf /etc/nginx/conf.d/pinso-ratelimit.conf
+cp nginx/cloudflare-realip.conf /etc/nginx/conf.d/pinso-cloudflare-realip.conf
 site=/etc/nginx/sites-available/pinso
 ln -sf "$site" /etc/nginx/sites-enabled/pinso
 use_https() { sed "s/__DOMAIN__/$DOMAIN/g" nginx/https.conf.template > "$site"; }
