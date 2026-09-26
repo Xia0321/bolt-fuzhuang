@@ -23,6 +23,10 @@ export class ScrapeError extends Error {
   }
 }
 
+// 一次抓取总共最多 30 秒（含 AI 补全），超时停止，不让运营干等
+const SCRAPE_LIMIT = 30_000;
+let deadline = Date.now() + SCRAPE_LIMIT;
+
 async function get(url, { json = false, headers = {} } = {}) {
   let res;
   try {
@@ -34,9 +38,10 @@ async function get(url, { json = false, headers = {} } = {}) {
         ...headers,
       },
       redirect: 'follow',
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(Math.max(1_000, deadline - Date.now())),
     });
   } catch (e) {
+    if (e.name === 'TimeoutError') throw new ScrapeError('对方网站 30 秒内没有返回数据，已停止抓取', 'TIMEOUT');
     throw new ScrapeError(`无法访问该链接：${e.message}`, 'FETCH_FAILED');
   }
   if (!res.ok) throw new ScrapeError(`对方网站返回 HTTP ${res.status}`, 'FETCH_FAILED');
@@ -347,11 +352,15 @@ export async function scrape(platform = 'auto', url) {
   }
   const fn = PLATFORMS[platform];
   if (!fn) throw new ScrapeError('不支持的平台', 'BAD_PLATFORM');
+  deadline = Date.now() + SCRAPE_LIMIT;
   let product = await fn(parsed.href);
   const missing = product[PAGE] ? missingFields(product) : [];
-  if (missing.length) {
+  const left = deadline - Date.now();
+  if (missing.length && left < 5_000) {
+    product.warnings = [...(product.warnings ?? []), `已到 30 秒上限，${missing.join('、')}没有用 AI 补全，请手动填写`];
+  } else if (missing.length) {
     try {
-      product = await fillWithAI(product[PAGE], product);
+      product = await fillWithAI(product[PAGE], product, left);
     } catch (e) {
       product.warnings = [...(product.warnings ?? []), `AI 补全${missing.join('、')}失败：${e.message}`];
     }

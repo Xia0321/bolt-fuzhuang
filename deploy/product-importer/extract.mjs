@@ -57,11 +57,11 @@ function pageContent(html, baseUrl) {
   return { text, images };
 }
 
-async function run(input) {
+async function run(input, timeoutMs) {
   const backend = translateBackend();
   if (backend !== 'claude-code') return viaApiWith(SYSTEM, input, SCHEMA);
   try {
-    return await runClaudeCode({ system: SYSTEM, input, schema: SCHEMA, model: 'sonnet', effort: 'low', timeoutMs: 120_000 });
+    return await runClaudeCode({ system: SYSTEM, input, schema: SCHEMA, model: 'sonnet', effort: 'low', timeoutMs });
   } catch (e) {
     if (process.env.ANTHROPIC_API_KEY) return viaApiWith(SYSTEM, input, SCHEMA);
     throw explainClaudeError(e);
@@ -83,11 +83,16 @@ export function missingFields(product) {
  * 用 AI 补全脚本没读到的字段，脚本已读到的以脚本为准（更可靠）。
  * html：已下载的商品页；product：脚本结果（统一结构）
  */
-export async function fillWithAI(html, product) {
+export async function fillWithAI(html, product, timeoutMs = 25_000) {
   if (!translateBackend()) return product;
   const { text, images } = pageContent(html, product.sourceUrl);
   const known = { name: product.name, price: product.price, colors: product.colors, sizes: product.sizes };
-  const ai = await run(JSON.stringify({ url: product.sourceUrl, known, text, images }));
+  // 超时即放弃（API 方式没有内置超时，用计时器兜住）
+  let timer;
+  const ai = await Promise.race([
+    run(JSON.stringify({ url: product.sourceUrl, known, text, images }), timeoutMs),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('超时')), timeoutMs); }),
+  ]).finally(() => clearTimeout(timer));
   const pageImages = new Set(images);
   const aiImages = (ai.images || []).filter(u => pageImages.has(u));
   const filled = [];

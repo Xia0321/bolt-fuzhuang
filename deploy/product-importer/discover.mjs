@@ -1,8 +1,9 @@
 // 找货源：按分类联网搜索「分类页 / 商品列表页」，运营打开后自行挑选具体商品，再把商品详情页链接贴回导入页。
 //
 // 分两路同时搜索（Claude Code + Sonnet，使用 Claude 订阅额度）：
-//   品牌店铺：Shopify 店铺、品牌独立站的分类页
-//   批发货源：批发、一件代发供应商的分类页，外加一个亚马逊品类搜索页
+//   独立站：Shopify 店铺、品牌独立站的分类页
+//   亚马逊：亚马逊该品类的搜索结果页
+// 不找批发、一件代发网站（运营要求）
 // 过程通过 emit 实时推送：搜索关键词、每个检查通过的页面、完成。
 // 服务端逐个检查页面能否打开；Shopify 分类页额外读出商品数量和几张缩略图作为预览。
 
@@ -39,23 +40,24 @@ const COMMON = `你是服装品牌 PINSO（品帅牛仔，主营牛仔及休闲�
 - 不要单个商品详情页、首页、博客文章
 - 与分类高度相关，风格偏牛仔、休闲服饰
 - 不要淘宝、天猫、京东、1688、拼多多（导入工具无法抓取这些平台的商品）
+- 不要批发、一件代发（dropshipping）、分销供应商网站
 - 每个网站只给 1 个页面，不要同一网站的不同筛选、排序、分页链接
 - 只返回在搜索结果中实际看到的链接，不要自行拼造（亚马逊搜索链接除外）
 - 最多搜索 2 次，找够数量立即停止并输出结果，不要为了更好的结果继续搜索
-- title 写页面上的分类名称；note 用一句中文说明这个来源的特点（如「牛仔品牌官网，款式偏复古」「批发供应商，支持一件代发」）`;
+- title 写页面上的分类名称；note 用一句中文说明这个来源的特点（如「牛仔品牌官网，款式偏复古」）`;
 
 const GROUPS = [
   {
-    key: 'brand',
-    label: '品牌店铺',
-    count: 4,
-    focus: '本次只找：Shopify 店铺的分类页（链接形如 https://店铺域名/collections/分类名）或品牌独立站的分类页。',
+    key: 'site',
+    label: '独立站',
+    count: 6,
+    focus: '本次只找：品牌独立站的分类页，优先 Shopify 店铺（链接形如 https://店铺域名/collections/分类名）。不要批发站、亚马逊及其他电商平台。',
   },
   {
-    key: 'wholesale',
-    label: '批发货源',
-    count: 4,
-    focus: '本次只找：批发、一件代发（dropshipping）、允许分销的供应商网站的分类页；另外附 1 个亚马逊该品类的搜索结果链接（可自行拼接，如 https://www.amazon.com/s?k=women+denim+jacket）。',
+    key: 'amazon',
+    label: '亚马逊',
+    count: 2,
+    focus: '本次只找：亚马逊（amazon.com）该品类的搜索结果页或分类页；可按品类英文关键词自行拼接搜索链接，如 https://www.amazon.com/s?k=women+denim+jacket，不必联网搜索。不要其他网站。',
   },
 ];
 
@@ -128,7 +130,7 @@ export async function discoverStream(categoryName, { refresh = false, emit }) {
   const seen = new Set(); // 已采用的网站，两路之间去重
   const found = [];
   let searchMs = 0;
-  emit({ type: 'stage', text: `正在联网搜索「${categoryName}」的货源（品牌店铺、批发货源两路同时进行）` });
+  emit({ type: 'stage', text: `正在联网搜索「${categoryName}」的货源（独立站、亚马逊两路同时进行）` });
 
   await Promise.all(GROUPS.map(async g => {
     let pages = [];
@@ -156,6 +158,8 @@ export async function discoverStream(categoryName, { refresh = false, emit }) {
       try {
         const u = new URL(p.url);
         if (!/^https?:$/.test(u.protocol) || seen.has(siteKey(u.href))) return false;
+        // 每一路只收自己的渠道：亚马逊一路只要亚马逊，独立站一路不要亚马逊
+        if (/(^|\.)amazon\./i.test(u.hostname) !== (g.key === 'amazon')) return false;
         seen.add(siteKey(u.href));
         return true;
       } catch {
