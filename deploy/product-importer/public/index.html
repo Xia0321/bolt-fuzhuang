@@ -74,6 +74,14 @@
       <button id="btnScrape">抓取并翻译</button>
     </div>
     <p class="muted" id="platformHint"></p>
+
+    <label style="margin-top:16px">分类</label>
+    <div class="platforms">
+      <label><input type="radio" name="categoryMode" value="auto" checked /><span>自动分类</span></label>
+      <label><input type="radio" name="categoryMode" value="manual" /><span>指定分类</span></label>
+    </div>
+    <div id="manualCategory" class="hidden" style="max-width:360px"><select id="category"></select></div>
+    <p class="muted" id="categoryModeHint">根据商品内容从现有分类中自动选择，入库前可在第 3 步修改。</p>
   </section>
 
   <section id="step2" class="hidden">
@@ -108,7 +116,7 @@
     <h2>3. 入库设置</h2>
     <div class="grid2">
       <div><label>商品类型</label><select id="productType"></select></div>
-      <div><label>分类 <span class="muted" id="categoryHint"></span></label><select id="category"></select></div>
+      <div><label>分类 <span class="muted" id="categoryHint"></span></label><select id="finalCategory"></select></div>
       <div><label>仓库</label><select id="warehouse"></select></div>
       <div><label>每个规格的库存</label><input id="stock" type="number" min="0" value="10" /></div>
     </div>
@@ -199,7 +207,9 @@
       $(id).innerHTML = items.map(i => `<option value="${esc(i.id)}">${esc(label(i))}</option>`).join('');
     };
     fill('productType', options.productTypes, t => t.name);
-    fill('category', options.categories, c => (c.parent ? `${c.parent.name} / ` : '') + c.name);
+    const categoryLabel = c => (c.parent ? `${c.parent.name} / ` : '') + c.name;
+    fill('category', options.categories, categoryLabel);
+    fill('finalCategory', options.categories, categoryLabel);
     fill('warehouse', options.warehouses, w => w.name);
     $('step1').classList.remove('hidden');
     updateHint();
@@ -209,6 +219,16 @@
     $('platformHint').textContent = HINTS[document.querySelector('input[name=platform]:checked').value];
   }
   document.querySelectorAll('input[name=platform]').forEach(r => r.addEventListener('change', updateHint));
+
+  const categoryMode = () => document.querySelector('input[name=categoryMode]:checked').value;
+  function setCategoryMode(mode) {
+    document.querySelector(`input[name=categoryMode][value=${mode}]`).checked = true;
+    $('manualCategory').classList.toggle('hidden', mode !== 'manual');
+    $('categoryModeHint').textContent = mode === 'auto'
+      ? '根据商品内容从现有分类中自动选择，入库前可在第 3 步修改。'
+      : '所有导入的商品都放到所选分类下。';
+  }
+  document.querySelectorAll('input[name=categoryMode]').forEach(r => r.addEventListener('change', () => setCategoryMode(categoryMode())));
 
   // ---------- 抓取与翻译 ----------
   $('btnScrape').addEventListener('click', e => busy(e.target, '抓取中…', async () => {
@@ -231,6 +251,7 @@
       state.colors = scraped.colors.map(c => ({ source: c, en: c, zh: c, ja: c, hex: '#cccccc' }));
       renderTexts();
       renderColors();
+      applyCategory(null);
       $('warnings').insertAdjacentHTML('beforeend', `<div class="msg warn">翻译失败：${esc(err.message)}。已用原文预填，请手动修改或点「重新翻译」。</div>`);
     }
     fillPrices();
@@ -240,18 +261,32 @@
   }));
 
   async function translate() {
-    const result = await api('/translate', { name: scraped.name, description: scraped.description, colors: scraped.colors });
+    const auto = categoryMode() === 'auto';
+    const result = await api('/translate', { name: scraped.name, description: scraped.description, colors: scraped.colors, suggestCategory: auto });
     for (const lang of ['en', 'zh', 'ja']) state.texts[lang] = result[lang];
     state.colors = result.colors.map(c => ({ ...c, hex: /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : '#cccccc' }));
-    if (result.categoryId && options.categories.some(c => c.id === result.categoryId)) {
-      $('category').value = result.categoryId;
-      $('categoryHint').textContent = '· 已按商品内容推荐，可修改';
-    }
+    applyCategory(auto ? result.categoryId : null);
     renderTexts();
     renderColors();
   }
 
   $('btnRetranslate').addEventListener('click', e => busy(e.target, '翻译中…', translate));
+
+  // 自动分类：使用 Claude 推荐的分类；指定分类：使用第 1 步选择的分类。
+  // 自动分类没有拿到推荐结果（如翻译失败）时改为指定分类，请手动选择
+  function applyCategory(suggested) {
+    if (categoryMode() === 'manual') {
+      $('finalCategory').value = $('category').value;
+      $('categoryHint').textContent = '· 指定分类';
+    } else if (suggested && options.categories.some(c => c.id === suggested)) {
+      $('finalCategory').value = suggested;
+      $('categoryHint').textContent = '· 自动分类，可修改';
+    } else {
+      setCategoryMode('manual');
+      $('finalCategory').value = $('category').value;
+      $('categoryHint').textContent = '· 未能自动分类，请确认';
+    }
+  }
 
   // ---------- 文案 ----------
   let currentLang = 'en';
@@ -346,7 +381,7 @@
     document.querySelectorAll('[data-channel]').forEach(input => { if (Number(input.value) > 0) prices[input.dataset.channel] = Number(input.value); });
     const result = await api('/import', {
       productTypeId: $('productType').value,
-      categoryId: $('category').value,
+      categoryId: $('finalCategory').value,
       warehouseId: $('warehouse').value,
       stock: Number($('stock').value) || 0,
       sourceUrl: scraped.sourceUrl,

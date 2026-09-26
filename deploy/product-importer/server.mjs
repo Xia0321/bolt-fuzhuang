@@ -9,7 +9,7 @@
 //   GET  /               后台中打开的操作页面
 //   GET  /api/options    商品类型、分类、渠道、仓库
 //   POST /api/scrape     { platform, url }
-//   POST /api/translate  { name, description, colors }
+//   POST /api/translate  { name, description, colors, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
 //
@@ -141,7 +141,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && route === '/api/translate') {
       if (!env.ANTHROPIC_API_KEY) return send(res, 503, { error: '服务器未配置 ANTHROPIC_API_KEY，无法翻译' });
-      const { categories } = await loadOptions(appToken);
+      // 自动分类时把现有分类交给 Claude 推荐；指定分类时不需要
+      const categories = input.suggestCategory ? (await loadOptions(appToken)).categories : [];
       const result = await translateProduct({
         name: String(input.name ?? ''),
         description: String(input.description ?? ''),

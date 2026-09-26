@@ -125,7 +125,7 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 
 ## 后台扩展：商品导入
 
-后台「商品目录 → 商品导入」（代码 `deploy/product-importer`，Saleor 应用 + 后台扩展）：选择平台（Shopify 独立站 / 通用独立站 / 亚马逊）并粘贴商品链接，抓取名称、描述、价格、图片、尺码、颜色，由 Claude（`claude-opus-5`）翻译为英、中、日三语并推荐分类，核对修改后入库。入库内容：商品、颜色 × 尺码规格、图片、中日文翻译、各渠道价格、新颜色的色值与翻译，状态为**未发布**，来源链接记在商品私有元数据 `import_source_url`。
+后台「商品目录 → 商品导入」（代码 `deploy/product-importer`，Saleor 应用 + 后台扩展）：选择平台（Shopify 独立站 / 通用独立站 / 亚马逊）并粘贴商品链接，抓取名称、描述、价格、图片、尺码、颜色，由 Claude（`claude-opus-5`）翻译为英、中、日三语，核对修改后入库。分类可选「自动分类」（默认，Claude 从现有分类中选择，入库前可改）或「指定分类」（从现有分类中手动选择）。入库内容：商品、颜色 × 尺码规格、图片、中日文翻译、各渠道价格、新颜色的色值与翻译，状态为**未发布**，来源链接记在商品私有元数据 `import_source_url`。
 
 - 服务器 `/opt/pinso/.env` 需要 `ANTHROPIC_API_KEY`（未配置时仍可抓取入库，只是不能自动翻译）
 - 首次部署时部署脚本会自动安装扩展（`manage.py install_app https://pinso.top/importer/manifest`），也可在后台「扩展」中用该清单地址手动安装
