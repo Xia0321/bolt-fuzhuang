@@ -5,7 +5,14 @@
 // 返回统一结构：
 //   { platform, sourceUrl, name, description, price: { amount, currency } | null,
 //     images: [url], sizes: [string], colors: [string], colorHints?: { 颜色: 通用色 }, keywords?: string }
+//     aiFilled?: [字段]  脚本没读到、由 AI 从网页正文中补全的字段
 //   只取链接对应的这一个商品；对方页面上链接到其他商品的颜色不处理
+//   Shopify 用公开接口，数据完整，不用 AI；其他网站脚本没读全时交给 AI 补（见 extract.mjs）
+
+import { fillWithAI, missingFields } from './extract.mjs';
+
+// 脚本结果上附带的已下载网页，供 AI 兜底读取；Symbol 键不会被 JSON 序列化返回给页面
+const PAGE = Symbol('page');
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
@@ -188,6 +195,7 @@ async function scrapeGeneric(url) {
     images: unique(images.filter(Boolean).map(i => absolute(i, url))),
     sizes: unique([ld?.size, ...variants.map(v => v.size)].flat().map(s => (typeof s === 'string' ? s : s?.name))),
     colors: unique([ld?.color, ...variants.map(v => v.color)].flat()),
+    [PAGE]: html,
   };
 }
 
@@ -244,8 +252,16 @@ async function scrapeAmazon(url) {
   const name = text('productTitle');
   if (!name) throw new ScrapeError('没有解析到商品名称，页面结构可能已变化', 'NOT_FOUND');
 
-  const bullets = html.match(/id=["']feature-bullets["'][^>]*>([\s\S]*?)<\/ul>/i)?.[1] ?? '';
-  const description = [htmlToText(bullets), text('productDescription')].filter(Boolean).join('\n');
+  // 「About this item」要点：旧版在 #feature-bullets 中，新版为 a-list-item 列表项
+  const bulletsHtml = html.match(/id=["']feature-bullets["'][^>]*>([\s\S]*?)<\/ul>/i)?.[1] ?? '';
+  const bullets = bulletsHtml
+    ? [htmlToText(bulletsHtml)]
+    : unique([...html.matchAll(/class=["']a-list-item a-size-base a-color-base["']>([\s\S]*?)<\/span>/gi)].map(m => htmlToText(m[1])));
+  // 页面上有多个 id="productDescription"（外层容器和正文），取文字最长的一个
+  const productDescription = [...html.matchAll(/id=["']productDescription["'][^>]*>([\s\S]*?)<\/(?:div|p)>\s*<\/div>/gi)]
+    .map(m => htmlToText(m[1].replace(/<style[\s\S]*?<\/style>/gi, '')))
+    .sort((a, b) => b.length - a.length)[0] ?? '';
+  const description = [...bullets, productDescription].filter(Boolean).join('\n');
 
   const priceText = decode(html.match(/class=["']a-price[^"']*["'][^>]*>\s*<span class=["']a-offscreen["']>([^<]+)</i)?.[1] ?? '');
   const amount = Number(priceText.replace(/[^\d.,]/g, '').replace(/,(?=\d{3}\b)/g, '').replace(',', '.'));
@@ -266,7 +282,19 @@ async function scrapeAmazon(url) {
     }
   }
 
+  // 颜色、尺码：只取链接对应的颜色（链接可能是父商品，页面会选中一个子商品，以页面选中的为准）
+  // dimensionValuesDisplayData 形如 { 子商品编号: [特殊尺码, 尺码, 颜色] }，顺序见 dimensions
   const variations = jsonAfter(html, '"variationValues" :') ?? jsonAfter(html, '"variationValues":') ?? {};
+  const children = jsonAfter(html, '"dimensionValuesDisplayData" :') ?? jsonAfter(html, '"dimensionValuesDisplayData":') ?? {};
+  const dims = jsonAfter(html, '"dimensions" :') ?? jsonAfter(html, '"dimensions":') ?? [];
+  const current = html.match(/"currentAsin"\s*:\s*"(\w{10})"/)?.[1] ?? asin;
+  const at = key => (Array.isArray(dims) ? dims.indexOf(key) : -1);
+  const [ci, si] = [at('color_name'), at('size_name')];
+  const color = ci >= 0 ? (children[asin] ?? children[current])?.[ci] : null;
+  const sizes = color && si >= 0
+    ? Object.values(children).filter(v => v[ci] === color).map(v => v[si])
+    : variations.size_name ?? [];
+  const sizeOrder = variations.size_name ?? [];
   return {
     platform: 'amazon',
     sourceUrl: `${u.origin}/dp/${asin}`,
@@ -274,8 +302,9 @@ async function scrapeAmazon(url) {
     description,
     price: amount > 0 ? { amount, currency } : null,
     images: unique(images),
-    sizes: unique(variations.size_name ?? []),
-    colors: unique(variations.color_name ?? []),
+    sizes: unique(sizes).sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b)),
+    colors: color ? [color] : unique(variations.color_name ?? []).slice(0, 1),
+    [PAGE]: html,
   };
 }
 
@@ -318,7 +347,15 @@ export async function scrape(platform = 'auto', url) {
   }
   const fn = PLATFORMS[platform];
   if (!fn) throw new ScrapeError('不支持的平台', 'BAD_PLATFORM');
-  const product = await fn(parsed.href);
+  let product = await fn(parsed.href);
+  const missing = product[PAGE] ? missingFields(product) : [];
+  if (missing.length) {
+    try {
+      product = await fillWithAI(product[PAGE], product);
+    } catch (e) {
+      product.warnings = [...(product.warnings ?? []), `AI 补全${missing.join('、')}失败：${e.message}`];
+    }
+  }
   if (!product.images.length) product.warnings = [...(product.warnings ?? []), '没有抓到商品图片'];
   if (!product.price) product.warnings = [...(product.warnings ?? []), '没有抓到价格，请手动填写'];
   return product;

@@ -411,6 +411,7 @@
     $('sizes').value = scraped.sizes.join(', ');
     $('source').textContent = `${scraped.name}\n\n${scraped.description}`;
     $('warnings').innerHTML = `<p class="muted">已识别为：${esc(PLATFORM_NAMES[scraped.platform] || scraped.platform)}</p>`
+      + (scraped.aiFilled?.length ? `<div class="msg warn">${esc(scraped.aiFilled.join('、'))}是 AI 从网页正文中读出的，请核对。</div>` : '')
       + (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
     renderImages();
     e.target.textContent = '翻译中…';

@@ -100,7 +100,7 @@ function viaApi(input, format) {
   return viaApiWith(SYSTEM, input, format);
 }
 
-async function viaApiWith(system, input, format) {
+export async function viaApiWith(system, input, format) {
   apiClient ??= new Anthropic();
   const response = await apiClient.beta.messages.create({
     model: 'claude-opus-5',

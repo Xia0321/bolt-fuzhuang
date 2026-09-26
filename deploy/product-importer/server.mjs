@@ -178,7 +178,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && route === '/api/scrape') {
       const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
       product.categoryGuess = guessCategory(product, (await loadOptions(appToken)).categories);
-      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colors.length });
+      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colors.length, aiFilled: product.aiFilled });
       return send(res, 200, product);
     }
     if (req.method === 'POST' && route === '/api/translate') {
