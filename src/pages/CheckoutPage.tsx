@@ -73,13 +73,6 @@ export function CheckoutPage() {
     );
   }
 
-  const fieldLabels: Record<string, string> = {
-    email: t('checkout_email'), firstName: t('checkout_first_name'), lastName: t('checkout_last_name'),
-    country: t('checkout_country'), countryArea: t('checkout_country_area'), city: t('checkout_city'),
-    cityArea: t('checkout_city_area'), postalCode: t('checkout_postal_code'), streetAddress1: t('checkout_street1'),
-    streetAddress2: t('checkout_street2'), phone: t('checkout_phone'),
-  };
-
   const withBusy = async (action: () => Promise<void>) => {
     setBusy(true);
     setError('');
