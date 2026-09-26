@@ -55,6 +55,18 @@
   .find { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
   .find .previews { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; background: var(--soft); }
   .find .previews img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
+  .progress { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; background: var(--soft); margin-top: 12px; }
+  .progress-head { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .progress-head .timer { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .spinner { width: 14px; height: 14px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; flex: none; }
+  .spinner.done { animation: none; border-color: var(--ok); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .steps { list-style: none; margin: 8px 0 0; padding: 0; font-size: 12px; color: var(--muted); max-height: 160px; overflow: auto; }
+  .steps li { padding: 2px 0; }
+  .steps li.ok { color: var(--ok); }
+  .steps li.bad { color: var(--danger); }
+  .find { animation: fadein .3s ease; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   a.primary { display: inline-block; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
   .find .body { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
   .find .name { font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -88,7 +100,11 @@
     </div>
     <p class="muted" id="categoryModeHint">贴链接后根据商品内容从现有分类中自动选择，入库前可修改。</p>
     <div id="discoverResult" class="hidden">
-      <p class="muted" id="discoverStatus"></p>
+      <div class="progress">
+        <div class="progress-head"><span class="spinner" id="discoverSpinner"></span><span id="discoverStage"></span><span class="timer" id="discoverTimer"></span></div>
+        <ul class="steps" id="discoverSteps"></ul>
+      </div>
+      <p class="muted" id="discoverStatus" style="margin-top:10px"></p>
       <div class="finds" id="finds"></div>
       <p class="muted" style="margin-top:8px">以上为联网搜索到的参考货源页面。请只上架自有或已获授权的商品，别人的图片和文案有版权。</p>
     </div>
@@ -247,27 +263,24 @@
   document.querySelectorAll('input[name=categoryMode]').forEach(r => r.addEventListener('change', () => setCategoryMode(categoryMode())));
 
   // ---------- 找货源：搜索分类页 / 列表页，运营打开后自己挑选商品 ----------
-  $('btnDiscover').addEventListener('click', e => discoverSources(e.target, false));
-  $('btnRefresh').addEventListener('click', e => discoverSources(e.target, true));
+  // 服务端逐行推送进度：搜索关键词、每个检查通过的页面、完成
+  let foundUrls = [];
+  $('btnDiscover').addEventListener('click', () => discoverSources(false));
+  $('btnRefresh').addEventListener('click', () => discoverSources(true));
 
-  // refresh 为 true 时不用缓存，重新联网搜索一批
-  const discoverSources = (button, refresh) => busy(button, '搜索中，约半分钟…', async () => {
-    show('');
-    $('discoverResult').classList.remove('hidden');
-    $('discoverStatus').textContent = `正在联网搜索「${$('category').selectedOptions[0]?.text ?? ''}」的货源分类页，并逐个检查能否打开…`;
-    $('finds').innerHTML = '';
-    const { pages, searched, cachedAt } = await api('/discover', { categoryId: $('category').value, refresh });
-    const cachedNote = cachedAt ? `（${Math.max(1, Math.round((Date.now() - cachedAt) / 60000))} 分钟前的搜索结果，想要新的请点「换一批」）` : '';
-    $('discoverStatus').textContent = pages.length
-      ? `找到 ${pages.length} 个货源页面${cachedNote}。点「打开挑选」在新窗口浏览，看中哪件商品，就打开它的详情页，把地址栏的链接复制到下面第 2 步。`
-      : `找到 ${searched} 个候选，但都无法打开，请点「换一批」或换个分类。`;
-    $('btnRefresh').classList.remove('hidden');
-    $('finds').innerHTML = pages.map((p, i) => `
+  function step(text, kind = '') {
+    $('discoverSteps').insertAdjacentHTML('beforeend', `<li class="${kind}">${esc(text)}</li>`);
+    $('discoverSteps').scrollTop = $('discoverSteps').scrollHeight;
+  }
+
+  function renderFind(p) {
+    const i = foundUrls.push(p.url) - 1;
+    $('finds').insertAdjacentHTML('beforeend', `
       <div class="find">
         ${p.previews.length ? `<div class="previews">${p.previews.map(src => `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`).join('')}</div>` : ''}
         <div class="body">
           <div class="name">${esc(p.title)}</div>
-          <div class="muted">${esc(p.site)} · ${esc(PLATFORM_NAMES[p.platform] || '')}${p.count ? ` · ${p.count}${p.count >= 250 ? '+' : ''} 件商品` : ''}</div>
+          <div class="muted">${esc(p.group)} · ${esc(p.site)} · ${esc(PLATFORM_NAMES[p.platform] || '')}${p.count ? ` · ${p.count}${p.count >= 250 ? '+' : ''} 件商品` : ''}</div>
           <div class="muted">${esc(p.note)}</div>
           <div class="link">${esc(p.url)}</div>
           <div class="btns">
@@ -275,14 +288,88 @@
             <button class="ghost" data-copy="${i}">复制</button>
           </div>
         </div>
-      </div>`).join('');
-    $('finds').dataset.items = JSON.stringify(pages.map(p => p.url));
-  });
+      </div>`);
+  }
+
+  async function discoverSources(refresh) {
+    const buttons = [$('btnDiscover'), $('btnRefresh')];
+    buttons.forEach(b => { b.disabled = true; });
+    show('');
+    foundUrls = [];
+    $('finds').innerHTML = '';
+    $('discoverSteps').innerHTML = '';
+    $('discoverStatus').textContent = '';
+    $('discoverSpinner').className = 'spinner';
+    $('discoverResult').classList.remove('hidden');
+    $('discoverStage').textContent = '正在准备搜索…';
+    const started = Date.now();
+    const tick = () => { $('discoverTimer').textContent = `已用时 ${Math.round((Date.now() - started) / 1000)} 秒`; };
+    tick();
+    const timer = setInterval(tick, 1000);
+    let total = 0;
+    try {
+      const res = await fetch(API + '/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization-Bearer': token },
+        body: JSON.stringify({ categoryId: $('category').value, refresh }),
+      });
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `请求失败（HTTP ${res.status}）`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === 'cached') {
+            $('discoverStage').textContent = `使用 ${Math.max(1, Math.round((Date.now() - ev.at) / 60000))} 分钟前的搜索结果（不消耗额度）`;
+          } else if (ev.type === 'stage') {
+            $('discoverStage').textContent = ev.text;
+          } else if (ev.type === 'search') {
+            step(`🔍 ${ev.group}：搜索「${ev.query}」`);
+          } else if (ev.type === 'groupDone') {
+            if (ev.error) step(`✗ ${ev.group}搜索失败：${ev.error}`, 'bad');
+            else step(`✓ ${ev.group}搜索完成，找到 ${ev.found} 个候选，正在检查能否打开…`, 'ok');
+            $('discoverStage').textContent = '正在检查页面能否打开，通过的会立即显示在下方';
+          } else if (ev.type === 'page') {
+            total++;
+            renderFind(ev.page);
+          } else if (ev.type === 'done') {
+            $('discoverStage').textContent = ev.cached
+              ? $('discoverStage').textContent
+              : `完成：共找到 ${ev.total} 个货源页面`;
+          } else if (ev.type === 'error') {
+            throw new Error(ev.message);
+          }
+        }
+      }
+      $('discoverStatus').textContent = total
+        ? '下一步：点「打开挑选」在新窗口浏览，看中哪件商品，就点进它的详情页，把地址栏的链接复制到下面第 2 步。想看别的货源，点「换一批」。'
+        : '这次没有找到能打开的货源页面，请点「换一批」重试，或换个分类。';
+    } catch (err) {
+      show(`找货源失败：${err.message}`);
+      $('discoverStage').textContent = '搜索中断';
+    } finally {
+      clearInterval(timer);
+      tick();
+      $('discoverSpinner').className = 'spinner done';
+      buttons.forEach(b => { b.disabled = false; });
+      $('btnRefresh').classList.remove('hidden');
+    }
+  }
 
   $('finds').addEventListener('click', async e => {
     const copy = e.target.dataset.copy;
     if (copy === undefined) return;
-    const url = JSON.parse($('finds').dataset.items || '[]')[copy];
+    const url = foundUrls[copy];
     // 后台内嵌页面不一定有剪贴板权限，失败时退回到选中文字复制
     try {
       await navigator.clipboard.writeText(url);

@@ -9,6 +9,7 @@
 //   GET  /               后台中打开的操作页面
 //   GET  /api/options    商品类型、分类、渠道、仓库
 //   POST /api/discover   { categoryId, refresh? }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
+//                        返回逐行 JSON 流（application/x-ndjson），实时推送搜索进度与结果，事件见 discover.mjs
 //   POST /api/scrape     { url, platform? }  平台默认自动识别
 //   POST /api/translate  { name, description, colors, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
@@ -30,7 +31,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateProduct } from './translate.mjs';
-import { discover } from './discover.mjs';
+import { discoverStream } from './discover.mjs';
 import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
 const env = process.env;
@@ -143,9 +144,21 @@ const server = http.createServer(async (req, res) => {
       const category = categories.find(c => c.id === input.categoryId);
       if (!category) return send(res, 400, { error: '请先选择分类' });
       const name = category.parent ? `${category.parent.name} / ${category.name}` : category.name;
-      const result = await discover(name, { refresh: Boolean(input.refresh) });
-      log({ event: 'discovered', staff, category: name, found: result.pages.length, searched: result.searched, cached: Boolean(result.cachedAt), searchMs: result.searchMs, verifyMs: result.verifyMs });
-      return send(res, 200, result);
+      // 逐行推送进度；X-Accel-Buffering 让 Nginx 不缓冲，页面能实时看到
+      res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+      const emit = event => res.write(`${JSON.stringify(event)}\n`);
+      try {
+        await discoverStream(name, {
+          refresh: Boolean(input.refresh),
+          emit: event => {
+            emit(event);
+            if (event.type === 'done') log({ event: 'discovered', staff, category: name, found: event.total, cached: Boolean(event.cached), searchMs: event.searchMs, elapsedMs: event.elapsedMs });
+          },
+        });
+      } catch (e) {
+        emit({ type: 'error', message: e.message });
+      }
+      return res.end();
     }
     if (req.method === 'POST' && route === '/api/scrape') {
       const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
