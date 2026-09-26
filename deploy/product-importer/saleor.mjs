@@ -86,7 +86,9 @@ export async function loadOptions(appToken) {
 
 // ---------- 入库 ----------
 
-const LANGS = { zh: 'ZH_HANS', ja: 'JA' };
+// 商品以中文为主语言（运营使用中文后台），英文、日文写入翻译
+const LANGS = { zh: 'ZH_HANS', en: 'EN', ja: 'JA' };
+const PRODUCT_TRANSLATIONS = ['en', 'ja'];
 
 // 按币种习惯取整：日元到 10 元，人民币到 1 元，其余保留两位小数
 function roundPrice(v, currency) {
@@ -143,11 +145,10 @@ async function ensureValue(attr, existing, { name, hex, zh, ja }, token) {
  * data: {
  *   productTypeId, categoryId, warehouseId, stock, sourceUrl,
  *   texts: { en: { name, description }, zh: {...}, ja: {...} },
- *   colors: [{ en, zh, ja, hex, priceRatio? }], sizes: [string],
- *   prices: { <channelId>: number }, images: [url | { url, color }]
+ *   colors: [{ en, zh, ja, hex }], sizes: [string],
+ *   prices: { <channelId>: number }, images: [url]
  * }
- * priceRatio：该颜色相对 prices 的价格倍数（对方网站各颜色定价不同时），默认 1
- * images 的 color 为颜色英文名：该图片同时关联到这个颜色的所有规格，前台切换颜色时显示对应图片
+ * 商品名称、描述以中文为主，英文、日文为翻译；网址标识用英文名生成
  */
 export async function importProduct(data, token) {
   const { productTypes, channels } = await loadOptions(token);
@@ -174,8 +175,8 @@ export async function importProduct(data, token) {
     for (const s of data.sizes) sizeIds.set(s, await ensureValue(sizeAttr, existing, { name: s }, token));
   }
 
-  // 2. 商品（英文为主语言），slug 冲突时加后缀
-  const base = slugify(data.texts.en.name);
+  // 2. 商品（中文为主语言），slug 用英文名生成，冲突时加后缀
+  const base = slugify(data.texts.en?.name || data.texts.zh.name);
   let product;
   for (let attempt = 0; !product; attempt++) {
     const slug = attempt ? `${base}-${Math.random().toString(36).slice(2, 6)}` : base;
@@ -186,9 +187,9 @@ export async function importProduct(data, token) {
         input: {
           productType: type.id,
           category: data.categoryId,
-          name: data.texts.en.name,
+          name: data.texts.zh.name,
           slug,
-          description: rich(data.texts.en.description),
+          description: rich(data.texts.zh.description),
         },
       }, token);
       product = d.productCreate.product;
@@ -198,8 +199,9 @@ export async function importProduct(data, token) {
     }
   }
 
-  // 3. 中日文翻译
-  for (const [lang, code] of Object.entries(LANGS)) {
+  // 3. 英文、日文翻译
+  for (const lang of PRODUCT_TRANSLATIONS) {
+    const code = LANGS[lang];
     const t = data.texts[lang];
     if (!t?.name) continue;
     await gql(`mutation($id: ID!, $lang: LanguageCodeEnum!, $input: TranslationInput!) {
@@ -221,64 +223,46 @@ export async function importProduct(data, token) {
 
   // 5. 规格：颜色 × 尺码
   const variants = [];
-  const variantColors = [];
   for (const c of colors) {
     for (const s of sizes) {
       const attributes = [];
       if (colorAttr && c) attributes.push({ id: colorAttr.id, swatch: { id: colorIds.get(c.en) } });
       if (sizeAttr && s) attributes.push({ id: sizeAttr.id, dropdown: { id: sizeIds.get(s) } });
       variants.push({
-        name: [c?.en, s].filter(Boolean).join(' / ') || data.texts.en.name,
+        name: [c?.zh || c?.en, s].filter(Boolean).join(' / ') || data.texts.zh.name,
         sku: [product.slug, c && slugify(c.en), s && slugify(s)].filter(Boolean).join('-'),
         trackInventory: true,
         attributes,
         stocks: data.warehouseId ? [{ warehouse: data.warehouseId, quantity: Math.max(0, Math.floor(Number(data.stock) || 0)) }] : [],
         channelListings: priced.map(ch => ({
           channelId: ch.id,
-          price: roundPrice(Number(data.prices[ch.id]) * (Number(c?.priceRatio) > 0 ? Number(c.priceRatio) : 1), ch.currencyCode),
+          price: roundPrice(Number(data.prices[ch.id]), ch.currencyCode),
         })),
       });
-      variantColors.push(c?.en ?? null);
     }
   }
   const vb = await gql(`mutation($product: ID!, $variants: [ProductVariantBulkCreateInput!]!) {
     productVariantBulkCreate(product: $product, variants: $variants) {
       errors { field message code }
-      results { productVariant { id } errors { field message code } }
+      results { errors { field message code } }
     }
   }`, { product: product.id, variants }, token);
-  const results = vb.productVariantBulkCreate.results ?? [];
-  const variantError = results.flatMap(r => r.errors ?? [])[0];
+  const variantError = (vb.productVariantBulkCreate.results ?? []).flatMap(r => r.errors ?? [])[0];
   if (variantError) throw new SaleorError(`规格创建失败：${variantError.field ?? ''} ${variantError.message}`);
-  // 各颜色的规格 id，结果与提交顺序一致
-  const variantsByColor = new Map();
-  results.forEach((r, i) => {
-    const color = variantColors[i];
-    if (!color || !r.productVariant) return;
-    if (!variantsByColor.has(color)) variantsByColor.set(color, []);
-    variantsByColor.get(color).push(r.productVariant.id);
-  });
 
-  // 6. 图片：交给 Saleor 按链接下载，4 张并行，单张失败不影响其余；标了颜色的图片关联到该颜色的规格
+  // 6. 图片：交给 Saleor 按链接下载，4 张并行，单张失败不影响其余
   const imageErrors = [];
   const mediaIds = new Array(data.images.length).fill(null);
   let next = 0;
   const worker = async () => {
     while (next < data.images.length) {
       const i = next++;
-      const image = data.images[i];
-      const { url, color } = typeof image === 'string' ? { url: image, color: null } : image;
+      const url = data.images[i];
       try {
         const d = await gql(`mutation($input: ProductMediaCreateInput!) {
           productMediaCreate(input: $input) { media { id } errors { field message } }
-        }`, { input: { product: product.id, mediaUrl: url, alt: [data.texts.en.name, color].filter(Boolean).join(' - ') } }, token);
-        const mediaId = d.productMediaCreate.media?.id;
-        mediaIds[i] = mediaId;
-        for (const variantId of (color && mediaId ? variantsByColor.get(color) ?? [] : [])) {
-          await gql(`mutation($media: ID!, $variant: ID!) {
-            variantMediaAssign(mediaId: $media, variantId: $variant) { errors { field message } }
-          }`, { media: mediaId, variant: variantId }, token);
-        }
+        }`, { input: { product: product.id, mediaUrl: url, alt: data.texts.zh.name } }, token);
+        mediaIds[i] = d.productMediaCreate.media?.id;
       } catch (e) {
         imageErrors.push(`${url}：${e.message}`);
       }
@@ -301,4 +285,71 @@ export async function importProduct(data, token) {
   }
 
   return { id: product.id, slug: product.slug, variants: variants.length, imageErrors };
+}
+
+// ---------- 名称查重 ----------
+
+// 文字语言：含假名为日文，含汉字为中文，否则按英文
+export const detectLang = text => (/[\u3040-\u30ff]/.test(text) ? 'ja' : /[\u4e00-\u9fff]/.test(text) ? 'zh' : 'en');
+
+// 比较用：统一全半角、大小写，去掉空格和标点
+const normalize = text => String(text ?? '').normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+
+// 来源链接统一写法后比较：去掉参数、锚点和结尾斜杠，Shopify 的「/collections/分类/products/商品」统一为「/products/商品」
+function sameSource(a, b) {
+  const key = url => {
+    try {
+      const u = new URL(url);
+      return `${u.hostname.replace(/^www\./, '')}${u.pathname.replace(/^\/collections\/[^/]+(?=\/products\/)/, '').replace(/\/+$/, '')}`.toLowerCase();
+    } catch {
+      return '';
+    }
+  };
+  return Boolean(a && b) && key(a) !== '' && key(a) === key(b);
+}
+
+/**
+ * 与已有商品比较同一语言的名称（原文是中文就比中文名，英文就比英文名），并检查该来源链接是否导入过。
+ * names：要比较的名称（原文名称、表单中该语言的名称）
+ * 返回 [{ id, name, matched, reason }]，reason 为「同一来源链接」「同名」「名称相近」
+ */
+export async function findDuplicates({ names, lang, sourceUrl }, token) {
+  const wanted = [...new Set(names.map(normalize).filter(Boolean))];
+  const matches = [];
+  let after = null;
+  for (;;) {
+    const d = await gql(`query($after: String) {
+      products(first: 100, after: $after) {
+        edges { node {
+          id name
+          en: translation(languageCode: EN) { name }
+          zh: translation(languageCode: ZH_HANS) { name }
+          ja: translation(languageCode: JA) { name }
+          source: privateMetafield(key: "import_source_url")
+        } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`, { after }, token);
+    for (const { node: p } of d.products.edges) {
+      // 该语言下的名称：翻译，或主名称本身就是该语言（早期商品以英文为主名称）
+      const own = [p[lang]?.name, detectLang(p.name) === lang ? p.name : null].filter(Boolean);
+      let reason = sameSource(p.source, sourceUrl) ? '同一来源链接' : null;
+      let matched = reason ? p.name : null;
+      for (const candidate of own) {
+        if (reason) break;
+        const c = normalize(candidate);
+        for (const w of wanted) {
+          const [short, long] = c.length <= w.length ? [c, w] : [w, c];
+          if (c === w) reason = '同名';
+          // 一个包含另一个且长度相近（避免「牛仔裤」这类短名称误报）
+          else if (short.length >= 4 && long.includes(short) && short.length / long.length >= 0.6) reason = '名称相近';
+          if (reason) { matched = candidate; break; }
+        }
+      }
+      if (reason) matches.push({ id: p.id, name: p.name, matched, reason });
+    }
+    if (!d.products.pageInfo.hasNextPage) break;
+    after = d.products.pageInfo.endCursor;
+  }
+  return matches;
 }

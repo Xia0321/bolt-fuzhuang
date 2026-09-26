@@ -12,6 +12,8 @@
 //                        返回逐行 JSON 流（application/x-ndjson），实时推送搜索进度与结果，事件见 discover.mjs
 //   POST /api/scrape     { url, platform? }  平台默认自动识别；另返回 categoryGuess（按关键词猜的分类，翻译失败时兜底）
 //   POST /api/translate  { name, description, colors, colorHints, suggestCategory }
+//   POST /api/duplicates { names, lang?, sourceUrl }  入库前名称查重：与已有商品同语言的名称比较（lang 默认按 names[0] 判断），
+//                        并检查来源链接是否导入过；返回 { lang, matches: [{ id, name, matched, reason }] }
 //   POST /api/import     见 saleor.mjs importProduct
 //   POST /api/translate-fields  { name, description } → { en, zh, ja }  后台表单（新建分类弹窗等）的字段翻译
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
@@ -35,7 +37,7 @@ import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateFields, translateProduct } from './translate.mjs';
 import { guessCategory } from './category.mjs';
 import { discoverStream } from './discover.mjs';
-import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
+import { detectLang, findDuplicates, gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
 const env = process.env;
 const PORT = Number(env.PORT || 8200);
@@ -176,7 +178,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'POST' && route === '/api/scrape') {
       const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
       product.categoryGuess = guessCategory(product, (await loadOptions(appToken)).categories);
-      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colorGroups?.length ?? product.colors.length });
+      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colors.length });
       return send(res, 200, product);
     }
     if (req.method === 'POST' && route === '/api/translate') {
@@ -198,6 +200,13 @@ const server = http.createServer(async (req, res) => {
       const name = String(input.name ?? '').trim();
       if (!name) return send(res, 400, { error: '请先填写名称' });
       return send(res, 200, await translateFields({ name, description: String(input.description ?? '') }));
+    }
+    if (req.method === 'POST' && route === '/api/duplicates') {
+      const names = (Array.isArray(input.names) ? input.names : []).map(String).filter(n => n.trim());
+      if (!names.length) return send(res, 400, { error: '缺少商品名称' });
+      const lang = ['zh', 'en', 'ja'].includes(input.lang) ? input.lang : detectLang(names[0]);
+      const matches = await findDuplicates({ names, lang, sourceUrl: input.sourceUrl ? String(input.sourceUrl) : '' }, appToken);
+      return send(res, 200, { lang, matches });
     }
     if (req.method === 'POST' && route === '/api/import') {
       const result = await importProduct(input, appToken);

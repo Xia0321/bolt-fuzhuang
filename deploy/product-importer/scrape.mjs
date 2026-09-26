@@ -4,11 +4,8 @@
 //
 // 返回统一结构：
 //   { platform, sourceUrl, name, description, price: { amount, currency } | null,
-//     images: [url], sizes: [string], colors: [string], keywords?: string,
-//     colorGroups?: [{ color, hint, url, price, images, sizes, differences, current? }] }
-//   colorGroups：对方网站把每个颜色做成单独商品时，本商品及页面上其他颜色各一项。
-//   differences 为与当前商品在面料、成分、版型、长度、价格等方面的差异：为空的只是颜色不同，可合并为一个商品的多个颜色；
-//   不为空的实际是不同商品，应单独导入
+//     images: [url], sizes: [string], colors: [string], colorHints?: { 颜色: 通用色 }, keywords?: string }
+//   只取链接对应的这一个商品；对方页面上链接到其他商品的颜色不处理
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
@@ -99,130 +96,39 @@ function colorOfProduct(p) {
   return parts.length > 1 ? { name: titleCase(parts[1]), hint: '' } : null;
 }
 
-// 页面上的颜色色块若链接到其他商品（对方网站把每个颜色做成单独商品），收集这些商品的 handle
-function siblingHandles(html, current) {
-  const handles = [];
-  for (const m of html.matchAll(/(?:href=["'][^"']*\/products\/|data-[\w-]*handle=["'])([\w-]+)/gi)) {
-    // 所在标签（从 < 到链接处）带有颜色、色块字样才算；有的主题把整段商品数据塞在属性里，标签很长，只看开头
-    const start = html.lastIndexOf('<', m.index);
-    if (/colou?r|swatch/i.test(html.slice(start, m.index))) handles.push(m[1]);
-  }
-  return unique(handles).filter(h => h !== current && !/gift-?card/i.test(h)).slice(0, 30);
-}
-
-// 面料成分，如「69% Cotton, 29% TENCEL™ Lyocell, 1% Spandex/Lycra」→「69 cotton, 29 lyocell, 1 elastane」，用于比较
-function composition(text) {
-  const line = String(text).split('\n').find(l => /\d+\s*%\s*[a-z]/i.test(l)) ?? '';
-  // 网页转文字时成分后面可能紧跟下一段标题（如 "LycraStretch"），遇到小写接大写处截断
-  const found = [...line.matchAll(/(\d+(?:\.\d+)?)\s*%\s*([a-z™®\s/-]+)/gi)]
-    .map(([, pct, name]) => [pct, name.replace(/([a-z])[A-Z].*$/, '$1').trim()]);
-  const parts = found.map(([pct, name]) => {
-    let m = name.toLowerCase().replace(/[™®]/g, '').replace(/\s+/g, ' ').trim();
-    if (/lycra|spandex|elastane/.test(m)) m = 'elastane';
-    else if (/lyocell|tencel/.test(m)) m = 'lyocell';
-    return `${Number(pct)} ${m}`;
-  });
-  return { key: parts.sort().join(', '), text: found.map(([pct, name]) => `${pct}% ${name}`).join(', ') };
-}
-
-// 从 Shopify 商品数据中取出可比较的特征：标签中的面料系列、版型、长度、弹力，描述中的成分，尺码颜色以外的选项，原价
-function traits(p) {
-  const tag = re => (p.tags || []).map(t => String(t).match(re)?.[1]?.trim().toLowerCase()).filter(Boolean);
-  return {
-    fabric: unique(tag(/^fabric\s*[-:]\s*(.+)$/i)).join(' / '),
-    fit: unique(tag(/^fit\s*:\s*(.+)$/i).map(v => v.replace(/\s*leg$/, ''))).sort().join(' / '),
-    length: unique(tag(/^length\s*:\s*(.+)$/i)).sort().join(' / '),
-    stretch: unique(tag(/^stretch\s*:\s*(.+)$/i)).join(' / '),
-    composition: composition(htmlToText(p.description)),
-    options: (p.options || []).filter(o => !SIZE_NAMES.test(o.name) && !COLOR_NAMES.test(o.name))
-      .map(o => `${o.name} ${o.values.join('/')}`).join('；'),
-    // 打折商品按划线原价比较，避免把促销价差当成不同商品
-    price: Math.max(p.price ?? 0, p.compare_at_price ?? 0) / 100,
-  };
-}
-
-// 与当前商品逐项比较，返回差异说明；只比较双方都有的特征
-function differences(a, b, currency) {
-  const out = [];
-  const both = (x, y) => x && y && x !== y;
-  if (both(a.fabric, b.fabric)) out.push(`面料系列不同：${titleCase(b.fabric)}`);
-  if (both(a.composition.key, b.composition.key)) out.push(`成分不同：${b.composition.text}`);
-  if (both(a.fit, b.fit)) out.push(`版型不同：${b.fit}`);
-  if (both(a.length, b.length)) out.push(`长度不同：${b.length}`);
-  if (both(a.stretch, b.stretch)) out.push(`弹力不同：${b.stretch}`);
-  if (both(a.options, b.options)) out.push(`选项不同：${b.options}`);
-  if (a.price && b.price && a.price !== b.price) out.push(`原价不同：${b.price} ${currency}`.trim());
-  return out;
-}
-
-async function mapLimit(list, limit, fn) {
-  const out = new Array(list.length);
-  let next = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => {
-    while (next < list.length) {
-      const i = next++;
-      out[i] = await fn(list[i]).catch(() => null);
-    }
-  }));
-  return out;
-}
-
 async function scrapeShopify(url) {
   const u = new URL(url);
   const handle = u.pathname.match(/\/products\/([^/?#]+)/)?.[1];
   if (!handle) throw new ScrapeError('不是 Shopify 商品链接（应包含 /products/商品名）', 'BAD_URL');
   // Shopify 会按访问者所在地区换算币种，固定请求美元（店铺不支持时仍按其实际币种返回，由 cart.js 读出）
   const headers = { Cookie: 'cart_currency=USD; localization=US' };
-  const load = h => get(`${u.origin}/products/${h}.js`, { json: true, headers });
-  const p = await load(handle);
+  const p = await get(`${u.origin}/products/${handle}.js`, { json: true, headers });
   // 店铺币种：cart.js 不创建购物车，只返回空购物车信息
   const cart = await get(`${u.origin}/cart.js`, { json: true, headers }).catch(() => null);
-  const currency = cart?.currency || '';
-  const optionIndex = (prod, pattern) => (prod.options || []).findIndex(o => pattern.test(o.name ?? o));
-  const values = (prod, idx) => (idx >= 0 ? unique(prod.variants.map(v => v[`option${idx + 1}`])) : []);
-  const imagesOf = prod => unique((prod.media?.length ? prod.media.filter(m => m.media_type === 'image' && !isSwatch(m)).map(m => m.src) : prod.images || [])
-    .map(i => absolute(i, u.origin)));
-  const priceOf = prod => (prod.price != null ? { amount: prod.price / 100, currency } : null);
-
+  const optionIndex = pattern => (p.options || []).findIndex(o => pattern.test(o.name ?? o));
+  const values = idx => (idx >= 0 ? unique(p.variants.map(v => v[`option${idx + 1}`])) : []);
+  const media = p.media?.length ? p.media.filter(m => m.media_type === 'image' && !isSwatch(m)).map(m => m.src) : p.images || [];
   const result = {
     platform: 'shopify',
     sourceUrl: url,
     name: p.title,
     description: htmlToText(p.description),
-    price: priceOf(p),
-    images: imagesOf(p),
-    sizes: values(p, optionIndex(p, SIZE_NAMES)),
-    colors: values(p, optionIndex(p, COLOR_NAMES)),
+    price: p.price != null ? { amount: p.price / 100, currency: cart?.currency || '' } : null,
+    images: unique(media.map(i => absolute(i, u.origin))),
+    sizes: values(optionIndex(SIZE_NAMES)),
+    colors: values(optionIndex(COLOR_NAMES)),
+    colorHints: {},
     keywords: [p.type, ...(p.tags || [])].filter(Boolean).join(', '),
   };
-  if (result.colors.length) return result;
-
-  // 没有颜色选项：本商品就是一个颜色，再找同款的其他颜色（各自是单独的商品）
-  const own = colorOfProduct(p);
-  if (!own) return result;
-  const style = titleParts(p.title)[0];
-  if (titleParts(p.title).length > 1) result.name = style;
-  result.colors = [own.name];
-  const base = traits(p);
-  const group = prod => ({
-    color: colorOfProduct(prod).name,
-    // 与当前商品的差异；为空说明只是颜色不同，可合并为同一商品的多个颜色
-    differences: prod === p ? [] : differences(base, traits(prod), currency),
-    hint: colorOfProduct(prod).hint,
-    url: `${u.origin}/products/${prod.handle}`,
-    price: priceOf(prod),
-    images: imagesOf(prod),
-    sizes: values(prod, optionIndex(prod, SIZE_NAMES)),
-  });
-  const html = await get(url).catch(() => '');
-  const siblings = (await mapLimit(siblingHandles(html, handle), 6, load))
-    // 只保留同一款式：标题的款式部分相同、有颜色、不重复
-    .filter(s => s && titleParts(s.title)[0] === style && colorOfProduct(s))
-    .map(group)
-    .filter((g, i, list) => g.color !== own.name && list.findIndex(x => x.color === g.color) === i)
-    // 同款（只有颜色不同）排在前面
-    .sort((x, y) => x.differences.length - y.differences.length);
-  result.colorGroups = [{ ...group(p), current: true }, ...siblings];
+  // 没有颜色选项的商品（对方一个颜色一个商品）：从标签或标题读出本商品的颜色，只取本商品，不管页面上的其他颜色
+  if (!result.colors.length) {
+    const own = colorOfProduct(p);
+    if (own) {
+      result.colors = [own.name];
+      if (own.hint) result.colorHints[own.name] = own.hint;
+      if (titleParts(p.title).length > 1) result.name = titleParts(p.title)[0];
+    }
+  }
   return result;
 }
 
