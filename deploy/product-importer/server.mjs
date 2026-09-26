@@ -14,7 +14,8 @@
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
 //
 // 环境变量：
-//   ANTHROPIC_API_KEY   Claude API Key（翻译用）
+//   CLAUDE_CODE_OAUTH_TOKEN  翻译用：Claude 订阅令牌（`claude setup-token` 生成），走订阅额度
+//   ANTHROPIC_API_KEY        翻译用：Claude API Key，按用量计费；两者都配时优先用订阅令牌
 //   PUBLIC_URL          站点地址，如 https://pinso.top
 //   TOKEN_TARGET_URL    Saleor 回传应用令牌的地址，默认 <PUBLIC_URL>/importer/register
 //                       （Saleor 默认禁止向内网地址发请求，所以使用公网地址）
@@ -27,7 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
-import { translateProduct } from './translate.mjs';
+import { translateBackend, translateProduct } from './translate.mjs';
 import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
 const env = process.env;
@@ -140,7 +141,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, product);
     }
     if (req.method === 'POST' && route === '/api/translate') {
-      if (!env.ANTHROPIC_API_KEY) return send(res, 503, { error: '服务器未配置 ANTHROPIC_API_KEY，无法翻译' });
+      if (!translateBackend()) return send(res, 503, { error: '服务器未配置 CLAUDE_CODE_OAUTH_TOKEN（订阅额度）或 ANTHROPIC_API_KEY，无法翻译' });
       // 自动分类时把现有分类交给 Claude 推荐；指定分类时不需要
       const categories = input.suggestCategory ? (await loadOptions(appToken)).categories : [];
       const result = await translateProduct({
@@ -164,4 +165,4 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => log({ event: 'started', port: PORT, base: BASE, installed: !!readAppToken() }));
+server.listen(PORT, () => log({ event: 'started', port: PORT, base: BASE, installed: !!readAppToken(), translate: translateBackend() || 'none' }));

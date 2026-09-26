@@ -127,7 +127,9 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 
 后台「商品目录 → 商品导入」（代码 `deploy/product-importer`，Saleor 应用 + 后台扩展）：选择平台（Shopify 独立站 / 通用独立站 / 亚马逊）并粘贴商品链接，抓取名称、描述、价格、图片、尺码、颜色，由 Claude（`claude-opus-5`）翻译为英、中、日三语，核对修改后入库。分类可选「自动分类」（默认，Claude 从现有分类中选择，入库前可改）或「指定分类」（从现有分类中手动选择）。入库内容：商品、颜色 × 尺码规格、图片、中日文翻译、各渠道价格、新颜色的色值与翻译，状态为**未发布**，来源链接记在商品私有元数据 `import_source_url`。
 
-- 服务器 `/opt/pinso/.env` 需要 `ANTHROPIC_API_KEY`（未配置时仍可抓取入库，只是不能自动翻译）
+- 翻译二选一，配置在服务器 `/opt/pinso/.env`（都未配置时仍可抓取入库，只是不能自动翻译）：
+  - `CLAUDE_CODE_OAUTH_TOKEN`（推荐）：在自己电脑上运行 `claude setup-token` 生成，使用 Claude 订阅额度，有效期一年；导入服务以无人值守模式运行 Claude Code 翻译，额度与本人使用 Claude Code 共用，用完时翻译会失败并改为原文预填
+  - `ANTHROPIC_API_KEY`：Claude Console 的 API Key，按用量计费
 - 首次部署时部署脚本会自动安装扩展（`manage.py install_app https://pinso.top/importer/manifest`），也可在后台「扩展」中用该清单地址手动安装
 - 只有具备「管理商品」权限的后台员工能使用；安装回调收到的令牌会先向 Saleor 验证属于本应用才启用
 - 亚马逊反爬严格，抓取可能失败；价格按参考汇率预填，请按实际定价修改

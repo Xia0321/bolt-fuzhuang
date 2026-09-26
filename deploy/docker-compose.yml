@@ -111,6 +111,8 @@ services:
     image: pinso-product-importer
     restart: unless-stopped
     environment:
+      # 翻译：优先用 Claude 订阅令牌（claude setup-token 生成），没有时用 API Key
+      CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PUBLIC_URL: ${STOREFRONT_URL:-}
       SALEOR_API_URL: http://api:8000/graphql/

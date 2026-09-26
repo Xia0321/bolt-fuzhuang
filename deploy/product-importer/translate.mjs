@@ -1,9 +1,22 @@
 // 用 Claude 把抓取到的商品名称、描述、颜色名翻译为英文、简体中文、日文，并为颜色给出色值。
-// 需要环境变量 ANTHROPIC_API_KEY。
+// 两种方式，按环境变量自动选择：
+//   CLAUDE_CODE_OAUTH_TOKEN  以无人值守模式运行 Claude Code（claude -p），使用 Claude 订阅额度，
+//                            令牌由 `claude setup-token` 生成，有效期一年
+//   ANTHROPIC_API_KEY        调用 Claude API，按用量计费（Claude Console 充值）
+// 也可用 TRANSLATE_BACKEND=claude-code|api 强制指定（本地开发时可直接用本机已登录的 Claude Code）。
 
+import { execFile } from 'node:child_process';
+import os from 'node:os';
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic();
+export function translateBackend() {
+  if (process.env.TRANSLATE_BACKEND) return process.env.TRANSLATE_BACKEND;
+  if (process.env.CLAUDE_CODE_OAUTH_TOKEN) return 'claude-code';
+  if (process.env.ANTHROPIC_API_KEY) return 'api';
+  return '';
+}
+
+let apiClient = null;
 
 const localized = {
   type: 'object',
@@ -52,7 +65,42 @@ const SYSTEM = `你是服装品牌 PINSO（品帅牛仔）独立站的商品编�
 
 // categories: [{ id, name }]，本店现有分类，用于推荐
 export async function translateProduct({ name, description, colors, categories = [] }) {
-  const response = await client.beta.messages.create({
+  const input = JSON.stringify({ name, description, colors, categories });
+  const format = schema(categories.map(c => c.id));
+  return translateBackend() === 'claude-code' ? viaClaudeCode(input, format) : viaApi(input, format);
+}
+
+// Claude Code 无人值守模式：关闭所有工具，只做翻译；输入从标准输入传入，结果为结构化 JSON
+function viaClaudeCode(input, format) {
+  const env = { ...process.env };
+  // 同时存在 API Key 时 Claude Code 会优先使用 API Key，这里去掉以确保使用订阅额度
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  const args = [
+    '-p', '--tools', '', '--no-session-persistence', '--output-format', 'json',
+    '--model', 'opus', '--effort', 'medium', '--max-turns', '4',
+    '--system-prompt', SYSTEM, '--json-schema', JSON.stringify(format),
+  ];
+  return new Promise((resolve, reject) => {
+    const child = execFile('claude', args, { cwd: os.tmpdir(), env, timeout: 240_000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+      let out = null;
+      try {
+        out = JSON.parse(stdout);
+      } catch {
+        // 下面统一报错
+      }
+      if (out?.structured_output) return resolve(out.structured_output);
+      const reason = out?.result || stderr?.trim() || err?.message || '无输出';
+      // 订阅额度用完、令牌过期等情况都会在这里体现
+      reject(new Error(`Claude Code 翻译失败：${String(reason).slice(0, 300)}`));
+    });
+    child.stdin.end(input);
+  });
+}
+
+async function viaApi(input, format) {
+  apiClient ??= new Anthropic();
+  const response = await apiClient.beta.messages.create({
     model: 'claude-opus-5',
     max_tokens: 16000,
     // 安全分类器误拒时由服务端自动改用推荐的后备模型重试
@@ -60,12 +108,12 @@ export async function translateProduct({ name, description, colors, categories =
     fallbacks: 'default',
     output_config: {
       effort: 'medium',
-      format: { type: 'json_schema', schema: schema(categories.map(c => c.id)) },
+      format: { type: 'json_schema', schema: format },
     },
     system: SYSTEM,
     messages: [{
       role: 'user',
-      content: JSON.stringify({ name, description, colors, categories }),
+      content: input,
     }],
   });
 

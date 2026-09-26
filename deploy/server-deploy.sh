@@ -153,7 +153,7 @@ else
   set_env STOREFRONT_URL "http://$SERVER_IP"
 fi
 # 顾客注册需要 Turnstile 密钥和 Saleor App 令牌（见 README「顾客注册」），缺少时注册功能关闭
-grep -q "^ANTHROPIC_API_KEY=." .env || echo "提示：.env 中未配置 ANTHROPIC_API_KEY，后台商品导入无法翻译"
+grep -qE "^(CLAUDE_CODE_OAUTH_TOKEN|ANTHROPIC_API_KEY)=." .env || echo "提示：.env 中未配置 CLAUDE_CODE_OAUTH_TOKEN 或 ANTHROPIC_API_KEY，后台商品导入无法翻译"
 for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET SALEOR_APP_TOKEN; do
   grep -q "^$key=." .env || echo "提示：.env 中未配置 $key，顾客注册暂不可用"
 done
