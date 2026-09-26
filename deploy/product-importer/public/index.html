@@ -47,6 +47,10 @@
   .groups input { position: absolute; top: 6px; left: 6px; }
   .groups .info { padding: 4px 6px; line-height: 1.4; }
   .groups .info .muted { font-size: 11px; }
+  .groups .diff { font-size: 11px; color: #8a6d00; margin-top: 2px; }
+  .groups .same { font-size: 11px; color: var(--ok); margin-top: 2px; }
+  .groups .solo { width: 100%; margin-top: 4px; padding: 4px; font-size: 12px; }
+  .groups-head { font-size: 13px; font-weight: 600; margin: 12px 0 6px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   th { font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -142,13 +146,15 @@
     <div class="row" style="margin-top:8px"><button class="ghost" id="btnRetranslate">重新翻译</button></div>
 
     <div id="groupsBox" class="hidden">
-      <h2 style="margin-top:24px">同款其他颜色 <span class="muted" id="groupCount"></span></h2>
-      <p class="muted" style="margin-top:-6px">对方网站把每个颜色做成了单独的商品。勾选的颜色会合并到这个商品里，每个颜色带上自己的图片，顾客在商品页切换颜色时显示对应图片；原价不同的颜色按原价比例换算售价。</p>
+      <h2 style="margin-top:24px">对方页面上的其他颜色 <span class="muted" id="groupCount"></span></h2>
+      <p class="muted" style="margin-top:-6px">对方网站把每个颜色做成了单独的商品：有的只是颜色不同，有的面料、成分、长度或价格也不同，实际是另一件商品。已逐项对比：
+        <b>同款</b>（只有颜色不同）默认合并为本商品的颜色，各颜色带上自己的图片，顾客切换颜色时显示对应图片；
+        <b>不同商品</b>默认不合并，请点「单独导入」作为独立商品。</p>
       <div class="row" style="margin-bottom:8px">
-        <button class="ghost" id="btnGroupsAll">全选</button>
+        <button class="ghost" id="btnGroupsSame">只合并同款</button>
         <button class="ghost" id="btnGroupsNone">只留当前颜色</button>
       </div>
-      <div class="groups" id="groups"></div>
+      <div id="groups"></div>
     </div>
 
     <h2 style="margin-top:24px">图片 <span class="muted" id="imageCount"></span></h2>
@@ -418,7 +424,8 @@
     if (!url) throw new Error('请粘贴商品链接');
     scraped = await api('/scrape', { url });
     const groups = scraped.colorGroups || [];
-    state.groupsOn = groups.map(() => true);
+    // 默认只合并同款（与当前商品只有颜色不同）
+    state.groupsOn = groups.map(g => g.current || !g.differences?.length);
     state.images = groups.length
       ? groups.flatMap(g => g.images.map(src => ({ src, on: true, color: g.color })))
       : scraped.images.map(src => ({ src, on: true, color: null }));
@@ -521,16 +528,25 @@
   function renderGroups() {
     const groups = scraped.colorGroups || [];
     $('groupsBox').classList.toggle('hidden', groups.length < 2);
-    const main = scraped.price?.amount;
-    $('groups').innerHTML = groups.map((g, i) => {
-      const diff = g.price && main && g.price.amount !== main ? `原价 ${g.price.amount}，按比例定价` : g.price ? `原价 ${g.price.amount}` : '';
+    const card = i => {
+      const g = groups[i];
+      const diffs = g.differences || [];
       return `<label class="${state.groupsOn[i] ? 'on' : ''}">
         <input type="checkbox" data-g="${i}" ${state.groupsOn[i] ? 'checked' : ''} ${g.current ? 'disabled' : ''} />
         ${g.images[0] ? `<img src="${esc(g.images[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<img alt="" />'}
-        <div class="info">${esc(g.color)}${g.current ? '（当前）' : ''}<div class="muted">${esc(diff)} · ${g.images.length} 张图</div></div>
+        <div class="info">${esc(g.color)}${g.current ? '（当前）' : ''}
+          <div class="muted">${g.price ? `现价 ${esc(g.price.amount)} · ` : ''}${g.images.length} 张图</div>
+          ${g.current ? '' : diffs.length
+            ? `${diffs.map(d => `<div class="diff">${esc(d)}</div>`).join('')}<button class="ghost solo" data-solo="${i}">单独导入</button>`
+            : '<div class="same">同款，只有颜色不同</div>'}
+        </div>
       </label>`;
-    }).join('');
-    $('groupCount').textContent = `已选 ${state.groupsOn.filter(Boolean).length} / ${groups.length}`;
+    };
+    const same = groups.map((g, i) => i).filter(i => groups[i].current || !groups[i].differences?.length);
+    const other = groups.map((g, i) => i).filter(i => !same.includes(i));
+    $('groups').innerHTML = `<div class="groups-head">同款（${same.length} 个颜色）</div><div class="groups">${same.map(card).join('')}</div>`
+      + (other.length ? `<div class="groups-head">不同商品（${other.length} 件，面料、成分、长度或价格不同）</div><div class="groups">${other.map(card).join('')}</div>` : '');
+    $('groupCount').textContent = `已合并 ${state.groupsOn.filter(Boolean).length} 个颜色`;
   }
   function setGroups(fn) {
     state.groupsOn = (scraped.colorGroups || []).map((g, i) => g.current || fn(i));
@@ -538,12 +554,21 @@
     renderImages();
     renderColors();
   }
+  // 单独导入：换成该商品的链接重新抓取（会以它为准重新对比其他颜色）
+  $('groups').addEventListener('click', e => {
+    const i = e.target.dataset.solo;
+    if (i === undefined) return;
+    e.preventDefault();
+    $('url').value = scraped.colorGroups[i].url;
+    $('stepLink').scrollIntoView({ behavior: 'smooth' });
+    $('btnScrape').click();
+  });
   $('groups').addEventListener('change', e => {
     const i = e.target.dataset.g;
     if (i === undefined) return;
     setGroups(j => (j === Number(i) ? e.target.checked : state.groupsOn[j]));
   });
-  $('btnGroupsAll').addEventListener('click', () => setGroups(() => true));
+  $('btnGroupsSame').addEventListener('click', () => setGroups(i => !scraped.colorGroups[i].differences?.length));
   $('btnGroupsNone').addEventListener('click', () => setGroups(() => false));
 
   // ---------- 文案 ----------
