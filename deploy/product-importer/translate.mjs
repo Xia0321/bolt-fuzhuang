@@ -5,9 +5,8 @@
 //   ANTHROPIC_API_KEY        调用 Claude API，按用量计费（Claude Console 充值）
 // 也可用 TRANSLATE_BACKEND=claude-code|api 强制指定（本地开发时可直接用本机已登录的 Claude Code）。
 
-import { execFile } from 'node:child_process';
-import os from 'node:os';
 import Anthropic from '@anthropic-ai/sdk';
+import { runClaudeCode } from './claude-code.mjs';
 
 export function translateBackend() {
   if (process.env.TRANSLATE_BACKEND) return process.env.TRANSLATE_BACKEND;
@@ -70,32 +69,9 @@ export async function translateProduct({ name, description, colors, categories =
   return translateBackend() === 'claude-code' ? viaClaudeCode(input, format) : viaApi(input, format);
 }
 
-// Claude Code 无人值守模式：关闭所有工具，只做翻译；输入从标准输入传入，结果为结构化 JSON
+// Claude Code 无人值守模式：关闭所有工具，只做翻译
 function viaClaudeCode(input, format) {
-  const env = { ...process.env };
-  // 同时存在 API Key 时 Claude Code 会优先使用 API Key，这里去掉以确保使用订阅额度
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  const args = [
-    '-p', '--tools', '', '--no-session-persistence', '--output-format', 'json',
-    '--model', 'opus', '--effort', 'medium', '--max-turns', '4',
-    '--system-prompt', SYSTEM, '--json-schema', JSON.stringify(format),
-  ];
-  return new Promise((resolve, reject) => {
-    const child = execFile('claude', args, { cwd: os.tmpdir(), env, timeout: 240_000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-      let out = null;
-      try {
-        out = JSON.parse(stdout);
-      } catch {
-        // 下面统一报错
-      }
-      if (out?.structured_output) return resolve(out.structured_output);
-      const reason = out?.result || stderr?.trim() || err?.message || '无输出';
-      // 订阅额度用完、令牌过期等情况都会在这里体现
-      reject(new Error(`Claude Code 翻译失败：${String(reason).slice(0, 300)}`));
-    });
-    child.stdin.end(input);
-  });
+  return runClaudeCode({ system: SYSTEM, input, schema: format });
 }
 
 async function viaApi(input, format) {

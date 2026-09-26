@@ -8,7 +8,8 @@
 //   POST /register       Saleor 安装应用时回传应用令牌；收到后稍等安装完成再向 Saleor 验证，确认属于本应用才启用
 //   GET  /               后台中打开的操作页面
 //   GET  /api/options    商品类型、分类、渠道、仓库
-//   POST /api/scrape     { platform, url }
+//   POST /api/discover   { categoryId }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
+//   POST /api/scrape     { url, platform? }  平台默认自动识别
 //   POST /api/translate  { name, description, colors, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
@@ -29,6 +30,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateProduct } from './translate.mjs';
+import { discover } from './discover.mjs';
 import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
 const env = process.env;
@@ -135,8 +137,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && route === '/api/options') return send(res, 200, await loadOptions(appToken));
 
     const input = req.method === 'POST' ? JSON.parse(await readBody(req) || '{}') : {};
+    if (req.method === 'POST' && route === '/api/discover') {
+      if (translateBackend() !== 'claude-code') return send(res, 503, { error: '找货源需要配置 Claude 订阅令牌（CLAUDE_CODE_OAUTH_TOKEN）' });
+      const { categories } = await loadOptions(appToken);
+      const category = categories.find(c => c.id === input.categoryId);
+      if (!category) return send(res, 400, { error: '请先选择分类' });
+      const name = category.parent ? `${category.parent.name} / ${category.name}` : category.name;
+      const result = await discover(name);
+      log({ event: 'discovered', staff, category: name, found: result.pages.length, searched: result.searched });
+      return send(res, 200, result);
+    }
     if (req.method === 'POST' && route === '/api/scrape') {
-      const product = await scrape(String(input.platform), String(input.url).trim());
+      const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
       log({ event: 'scraped', staff, platform: input.platform, url: input.url });
       return send(res, 200, product);
     }

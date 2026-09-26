@@ -51,6 +51,17 @@
   .hidden { display: none !important; }
   .source { background: var(--soft); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; max-height: 160px; overflow: auto; font-size: 13px; color: var(--muted); }
   .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  .finds { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
+  .find { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; }
+  .find .previews { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; background: var(--soft); }
+  .find .previews img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; }
+  a.primary { display: inline-block; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
+  .find .body { padding: 10px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .find .name { font-size: 13px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .find .link { font-size: 11px; color: var(--muted); word-break: break-all; user-select: all; }
+  .find .btns { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; }
+  .find .btns > * { flex: 1; text-align: center; padding: 6px 4px; font-size: 12px; }
+  a.ghost { display: inline-block; border: 1px solid var(--line); border-radius: 6px; color: var(--text); text-decoration: none; }
   @media (max-width: 600px) { main { padding: 16px 12px 48px; } section { padding: 14px; } }
 </style>
 </head>
@@ -63,29 +74,36 @@
   <div id="waiting" class="msg warn">正在连接后台…如果一直停留在这里，请从 Saleor 后台「商品目录 → 商品导入」打开本页。</div>
 
   <section id="step1" class="hidden">
-    <h2>1. 商品链接</h2>
-    <div class="platforms">
-      <label><input type="radio" name="platform" value="shopify" checked /><span>Shopify 独立站</span></label>
-      <label><input type="radio" name="platform" value="generic" /><span>通用独立站</span></label>
-      <label><input type="radio" name="platform" value="amazon" /><span>亚马逊</span></label>
-    </div>
-    <div class="row">
-      <div class="grow"><input id="url" type="url" placeholder="https://..." /></div>
-      <button id="btnScrape">抓取并翻译</button>
-    </div>
-    <p class="muted" id="platformHint"></p>
-
-    <label style="margin-top:16px">分类</label>
+    <h2>1. 分类</h2>
     <div class="platforms">
       <label><input type="radio" name="categoryMode" value="auto" checked /><span>自动分类</span></label>
       <label><input type="radio" name="categoryMode" value="manual" /><span>指定分类</span></label>
     </div>
-    <div id="manualCategory" class="hidden" style="max-width:360px"><select id="category"></select></div>
-    <p class="muted" id="categoryModeHint">根据商品内容从现有分类中自动选择，入库前可在第 3 步修改。</p>
+    <div id="manualCategory" class="hidden">
+      <div class="row">
+        <div style="min-width:240px"><select id="category"></select></div>
+        <button class="ghost" id="btnDiscover">帮我找货源</button>
+      </div>
+    </div>
+    <p class="muted" id="categoryModeHint">贴链接后根据商品内容从现有分类中自动选择，入库前可修改。</p>
+    <div id="discoverResult" class="hidden">
+      <p class="muted" id="discoverStatus"></p>
+      <div class="finds" id="finds"></div>
+      <p class="muted" style="margin-top:8px">以上为联网搜索到的参考货源页面。请只上架自有或已获授权的商品，别人的图片和文案有版权。</p>
+    </div>
+  </section>
+
+  <section id="stepLink" class="hidden">
+    <h2>2. 商品链接</h2>
+    <div class="row">
+      <div class="grow"><input id="url" type="url" placeholder="粘贴商品详情页链接，https://..." /></div>
+      <button id="btnScrape">抓取并翻译</button>
+    </div>
+    <p class="muted">支持 Shopify 店铺、品牌独立站、亚马逊的商品详情页，自动识别；淘宝、天猫、京东、1688 暂不支持。</p>
   </section>
 
   <section id="step2" class="hidden">
-    <h2>2. 核对内容</h2>
+    <h2>3. 核对内容</h2>
     <div id="warnings"></div>
     <label>原文</label>
     <div class="source" id="source"></div>
@@ -113,7 +131,7 @@
   </section>
 
   <section id="step3" class="hidden">
-    <h2>3. 入库设置</h2>
+    <h2>4. 入库设置</h2>
     <div class="grid2">
       <div><label>商品类型</label><select id="productType"></select></div>
       <div><label>分类 <span class="muted" id="categoryHint"></span></label><select id="finalCategory"></select></div>
@@ -134,11 +152,7 @@
   const API = location.pathname.replace(/\/[^/]*$/, '') + '/api';
   // 参考汇率（1 美元兑换），仅用于预填售价
   const RATES = { USD: 1, CNY: 7.1, JPY: 150, EUR: 0.92, GBP: 0.78, CAD: 1.37, AUD: 1.52, SGD: 1.34, HKD: 7.8, KRW: 1380, TWD: 32 };
-  const HINTS = {
-    shopify: '链接形如 https://店铺域名/products/商品名，抓取最完整稳定。',
-    generic: '读取网页中的标准商品数据，适用于大多数独立站；尺码、颜色可能需要手动补充。',
-    amazon: '亚马逊反爬严格，可能被拦截，失败时请稍后重试。',
-  };
+  const PLATFORM_NAMES = { shopify: 'Shopify 店铺', generic: '独立站', amazon: '亚马逊' };
   const $ = id => document.getElementById(id);
   let token = '';
   let options = null;
@@ -212,35 +226,80 @@
     fill('finalCategory', options.categories, categoryLabel);
     fill('warehouse', options.warehouses, w => w.name);
     $('step1').classList.remove('hidden');
-    updateHint();
+    $('stepLink').classList.remove('hidden');
   }
 
-  function updateHint() {
-    $('platformHint').textContent = HINTS[document.querySelector('input[name=platform]:checked').value];
-  }
-  document.querySelectorAll('input[name=platform]').forEach(r => r.addEventListener('change', updateHint));
 
   const categoryMode = () => document.querySelector('input[name=categoryMode]:checked').value;
   function setCategoryMode(mode) {
     document.querySelector(`input[name=categoryMode][value=${mode}]`).checked = true;
     $('manualCategory').classList.toggle('hidden', mode !== 'manual');
     $('categoryModeHint').textContent = mode === 'auto'
-      ? '根据商品内容从现有分类中自动选择，入库前可在第 3 步修改。'
-      : '所有导入的商品都放到所选分类下。';
+      ? '贴链接后根据商品内容从现有分类中自动选择，入库前可修改。'
+      : '商品放到所选分类下。不知道去哪里找商品链接时，点「帮我找货源」。';
+    if (mode === 'auto') $('discoverResult').classList.add('hidden');
   }
+  $('category').addEventListener('change', () => $('discoverResult').classList.add('hidden'));
   document.querySelectorAll('input[name=categoryMode]').forEach(r => r.addEventListener('change', () => setCategoryMode(categoryMode())));
+
+  // ---------- 找货源：搜索分类页 / 列表页，运营打开后自己挑选商品 ----------
+  $('btnDiscover').addEventListener('click', e => busy(e.target, '搜索中，约 1～3 分钟…', async () => {
+    show('');
+    $('discoverResult').classList.remove('hidden');
+    $('discoverStatus').textContent = `正在联网搜索「${$('category').selectedOptions[0]?.text ?? ''}」的货源分类页，并逐个检查能否打开…`;
+    $('finds').innerHTML = '';
+    const { pages, searched } = await api('/discover', { categoryId: $('category').value });
+    $('discoverStatus').textContent = pages.length
+      ? `找到 ${pages.length} 个货源页面。点「打开挑选」在新窗口浏览，看中哪件商品，就打开它的详情页，把地址栏的链接复制到下面第 2 步。`
+      : `找到 ${searched} 个候选，但都无法打开，请再搜一次或换个分类。`;
+    $('finds').innerHTML = pages.map((p, i) => `
+      <div class="find">
+        ${p.previews.length ? `<div class="previews">${p.previews.map(src => `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`).join('')}</div>` : ''}
+        <div class="body">
+          <div class="name">${esc(p.title)}</div>
+          <div class="muted">${esc(p.site)} · ${esc(PLATFORM_NAMES[p.platform] || '')}${p.count ? ` · ${p.count}${p.count >= 250 ? '+' : ''} 件商品` : ''}</div>
+          <div class="muted">${esc(p.note)}</div>
+          <div class="link">${esc(p.url)}</div>
+          <div class="btns">
+            <a class="primary" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">打开挑选</a>
+            <button class="ghost" data-copy="${i}">复制</button>
+          </div>
+        </div>
+      </div>`).join('');
+    $('finds').dataset.items = JSON.stringify(pages.map(p => p.url));
+  }));
+
+  $('finds').addEventListener('click', async e => {
+    const copy = e.target.dataset.copy;
+    if (copy === undefined) return;
+    const url = JSON.parse($('finds').dataset.items || '[]')[copy];
+    // 后台内嵌页面不一定有剪贴板权限，失败时退回到选中文字复制
+    try {
+      await navigator.clipboard.writeText(url);
+      e.target.textContent = '已复制';
+    } catch {
+      const input = document.createElement('input');
+      input.value = url;
+      document.body.appendChild(input);
+      input.select();
+      const ok = document.execCommand('copy');
+      input.remove();
+      e.target.textContent = ok ? '已复制' : '请手动复制';
+    }
+    setTimeout(() => { e.target.textContent = '复制'; }, 1500);
+  });
 
   // ---------- 抓取与翻译 ----------
   $('btnScrape').addEventListener('click', e => busy(e.target, '抓取中…', async () => {
     show('');
     const url = $('url').value.trim();
     if (!url) throw new Error('请粘贴商品链接');
-    const platform = document.querySelector('input[name=platform]:checked').value;
-    scraped = await api('/scrape', { platform, url });
+    scraped = await api('/scrape', { url });
     state.images = scraped.images.map(src => ({ src, on: true }));
     $('sizes').value = scraped.sizes.join(', ');
     $('source').textContent = `${scraped.name}\n\n${scraped.description}`;
-    $('warnings').innerHTML = (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
+    $('warnings').innerHTML = `<p class="muted">已识别为：${esc(PLATFORM_NAMES[scraped.platform] || scraped.platform)}</p>`
+      + (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
     renderImages();
     e.target.textContent = '翻译中…';
     try {

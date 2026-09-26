@@ -247,15 +247,32 @@ async function scrapeAmazon(url) {
   };
 }
 
+// ---------- 自动识别 ----------
+
+// 亚马逊链接按亚马逊解析；其他链接先试 Shopify 公开接口，拿不到再从网页中读取商品数据
+async function scrapeAuto(url) {
+  const u = new URL(url);
+  if (/(^|\.)amazon\./i.test(u.hostname)) return scrapeAmazon(url);
+  if (/\/products\/[^/?#]+/.test(u.pathname)) {
+    try {
+      return await scrapeShopify(url);
+    } catch {
+      // 不是 Shopify 网站，按通用方式处理
+    }
+  }
+  return scrapeGeneric(url);
+}
+
 // ---------- 入口 ----------
 
 export const PLATFORMS = {
+  auto: scrapeAuto,
   shopify: scrapeShopify,
   generic: scrapeGeneric,
   amazon: scrapeAmazon,
 };
 
-export async function scrape(platform, url) {
+export async function scrape(platform = 'auto', url) {
   let parsed;
   try {
     parsed = new URL(url);
