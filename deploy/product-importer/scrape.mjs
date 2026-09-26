@@ -81,9 +81,11 @@ async function scrapeShopify(url) {
   const u = new URL(url);
   const handle = u.pathname.match(/\/products\/([^/?#]+)/)?.[1];
   if (!handle) throw new ScrapeError('不是 Shopify 商品链接（应包含 /products/商品名）', 'BAD_URL');
-  const p = await get(`${u.origin}/products/${handle}.js`, { json: true });
+  // Shopify 会按访问者所在地区换算币种，固定请求美元（店铺不支持时仍按其实际币种返回，由 cart.js 读出）
+  const headers = { Cookie: 'cart_currency=USD; localization=US' };
+  const p = await get(`${u.origin}/products/${handle}.js`, { json: true, headers });
   // 店铺币种：cart.js 不创建购物车，只返回空购物车信息
-  const cart = await get(`${u.origin}/cart.js`, { json: true }).catch(() => null);
+  const cart = await get(`${u.origin}/cart.js`, { json: true, headers }).catch(() => null);
   const optionIndex = pattern => (p.options || []).findIndex(o => pattern.test(o.name ?? o));
   const values = idx => (idx >= 0 ? unique(p.variants.map(v => v[`option${idx + 1}`])) : []);
   return {
