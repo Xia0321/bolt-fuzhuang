@@ -87,8 +87,9 @@ export function fetchAccountConfig(): Promise<AccountConfig> {
   return configPromise;
 }
 
-// null：加载中；每次组件挂载都重新拉取，确保绕过开关即时生效
-export function useAccountConfig(): AccountConfig | null {
+// null：加载中；每次组件挂载都重新拉取，确保绕过开关即时生效。
+// version 变化时重新拉取（如页面打开期间绕过开关被关闭，提交被拒后刷新配置以显示人机验证）
+export function useAccountConfig(version = 0): AccountConfig | null {
   const [config, setConfig] = useState<AccountConfig | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -97,7 +98,7 @@ export function useAccountConfig(): AccountConfig | null {
       .catch(() => ({ captchaSiteKey: '', registerEnabled: false }))
       .then((c: AccountConfig) => { if (!cancelled) setConfig(c); });
     return () => { cancelled = true; };
-  }, []);
+  }, [version]);
   return config;
 }
 

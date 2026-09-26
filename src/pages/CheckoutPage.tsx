@@ -265,7 +265,7 @@ export function CheckoutPage() {
                     {needCaptcha && <Captcha siteKey={accountConfig.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
                     <button
                       onClick={placeOrder}
-                      disabled={busy || !accountConfig || (needCaptcha && !captchaToken)}
+                      disabled={busy || !accountConfig}
                       className="w-full py-4 bg-neutral-900 text-white text-[13px] tracking-[0.15em] uppercase font-medium hover:bg-neutral-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-70"
                     >
                       {busy ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}

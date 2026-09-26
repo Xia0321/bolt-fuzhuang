@@ -69,7 +69,7 @@ export function LoginPage({ next, email: initialEmail }: { next?: string; email?
           </button>
         </div>
         {needCaptcha && <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
-        <PrimaryButton busy={busy} disabled={!config || (needCaptcha && !captchaToken)}>{t('auth_login_button')}</PrimaryButton>
+        <PrimaryButton busy={busy} disabled={!config}>{t('auth_login_button')}</PrimaryButton>
       </form>
       <p className="mt-8 text-center text-[14px] text-neutral-500">
         {t('auth_no_account')}{' '}

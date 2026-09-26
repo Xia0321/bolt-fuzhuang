@@ -64,7 +64,7 @@ function RequestForm() {
             <input type="email" className={inputClass} required value={email} onChange={e => setEmail(e.target.value)} autoComplete="email" />
           </Field>
           {needCaptcha && <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />}
-          <PrimaryButton busy={busy} disabled={!config || (needCaptcha && !captchaToken)}>{t('reset_send')}</PrimaryButton>
+          <PrimaryButton busy={busy} disabled={!config}>{t('reset_send')}</PrimaryButton>
         </form>
       )}
       <p className="mt-8 text-center text-[14px]">

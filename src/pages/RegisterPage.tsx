@@ -16,7 +16,8 @@ export function RegisterPage({ next }: { next?: string }) {
   const { t } = useI18n();
   const { navigate, navigateUrl } = useNav();
   const { user, register } = useAuth();
-  const config = useAccountConfig();
+  const [configVersion, setConfigVersion] = useState(0);
+  const config = useAccountConfig(configVersion);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -53,6 +54,8 @@ export function RegisterPage({ next }: { next?: string }) {
       setError(key ? t(key) : err instanceof Error ? err.message : t('error_generic'));
       // 验证令牌只能用一次，失败后重新验证
       setCaptchaReset(n => n + 1);
+      // 未显示人机验证（绕过开关开启）却被判验证失败，说明开关已被关闭：重新拉取配置以显示验证
+      if (authErrorKey(err) === 'auth_err_CAPTCHA_FAILED' && !config?.captchaSiteKey) setConfigVersion(v => v + 1);
     } finally {
       setBusy(false);
     }
@@ -104,7 +107,7 @@ export function RegisterPage({ next }: { next?: string }) {
         </Field>
         {mismatch && <p className="text-[12px] text-red-600 -mt-2">{t('auth_password_mismatch')}</p>}
         <Captcha siteKey={config.captchaSiteKey} onToken={setCaptchaToken} resetKey={captchaReset} />
-        <PrimaryButton busy={busy} disabled={!captchaToken}>{t('auth_register_button')}</PrimaryButton>
+        <PrimaryButton busy={busy}>{t('auth_register_button')}</PrimaryButton>
       </form>
     );
   }
