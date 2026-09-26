@@ -73,7 +73,7 @@ export async function loadOptions(appToken) {
     productTypes(first: 50) {
       edges { node { id name hasVariants variantAttributes { id slug name inputType } } }
     }
-    categories(first: 100) { edges { node { id name level parent { name } } } }
+    categories(first: 100) { edges { node { id name slug level parent { name } translation(languageCode: EN) { name } } } }
     channels { id slug name currencyCode }
     warehouses(first: 20) { edges { node { id name } } }
   }`, {}, appToken).then(d => ({
@@ -87,6 +87,13 @@ export async function loadOptions(appToken) {
 // ---------- 入库 ----------
 
 const LANGS = { zh: 'ZH_HANS', ja: 'JA' };
+
+// 按币种习惯取整：日元到 10 元，人民币到 1 元，其余保留两位小数
+function roundPrice(v, currency) {
+  if (currency === 'JPY' || currency === 'KRW') return Math.round(v / 10) * 10;
+  if (currency === 'CNY' || currency === 'TWD') return Math.round(v);
+  return Math.round(v * 100) / 100;
+}
 
 const slugify = s => String(s).toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
   .replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 80) || 'product';
@@ -136,9 +143,11 @@ async function ensureValue(attr, existing, { name, hex, zh, ja }, token) {
  * data: {
  *   productTypeId, categoryId, warehouseId, stock, sourceUrl,
  *   texts: { en: { name, description }, zh: {...}, ja: {...} },
- *   colors: [{ en, zh, ja, hex }], sizes: [string],
- *   prices: { <channelId>: number }, images: [url]
+ *   colors: [{ en, zh, ja, hex, priceRatio? }], sizes: [string],
+ *   prices: { <channelId>: number }, images: [url | { url, color }]
  * }
+ * priceRatio：该颜色相对 prices 的价格倍数（对方网站各颜色定价不同时），默认 1
+ * images 的 color 为颜色英文名：该图片同时关联到这个颜色的所有规格，前台切换颜色时显示对应图片
  */
 export async function importProduct(data, token) {
   const { productTypes, channels } = await loadOptions(token);
@@ -212,6 +221,7 @@ export async function importProduct(data, token) {
 
   // 5. 规格：颜色 × 尺码
   const variants = [];
+  const variantColors = [];
   for (const c of colors) {
     for (const s of sizes) {
       const attributes = [];
@@ -223,29 +233,64 @@ export async function importProduct(data, token) {
         trackInventory: true,
         attributes,
         stocks: data.warehouseId ? [{ warehouse: data.warehouseId, quantity: Math.max(0, Math.floor(Number(data.stock) || 0)) }] : [],
-        channelListings: priced.map(ch => ({ channelId: ch.id, price: Number(data.prices[ch.id]) })),
+        channelListings: priced.map(ch => ({
+          channelId: ch.id,
+          price: roundPrice(Number(data.prices[ch.id]) * (Number(c?.priceRatio) > 0 ? Number(c.priceRatio) : 1), ch.currencyCode),
+        })),
       });
+      variantColors.push(c?.en ?? null);
     }
   }
   const vb = await gql(`mutation($product: ID!, $variants: [ProductVariantBulkCreateInput!]!) {
     productVariantBulkCreate(product: $product, variants: $variants) {
       errors { field message code }
-      results { errors { field message code } }
+      results { productVariant { id } errors { field message code } }
     }
   }`, { product: product.id, variants }, token);
-  const variantError = vb.productVariantBulkCreate.results?.flatMap(r => r.errors ?? [])[0];
+  const results = vb.productVariantBulkCreate.results ?? [];
+  const variantError = results.flatMap(r => r.errors ?? [])[0];
   if (variantError) throw new SaleorError(`规格创建失败：${variantError.field ?? ''} ${variantError.message}`);
+  // 各颜色的规格 id，结果与提交顺序一致
+  const variantsByColor = new Map();
+  results.forEach((r, i) => {
+    const color = variantColors[i];
+    if (!color || !r.productVariant) return;
+    if (!variantsByColor.has(color)) variantsByColor.set(color, []);
+    variantsByColor.get(color).push(r.productVariant.id);
+  });
 
-  // 6. 图片：交给 Saleor 按链接下载，单张失败不影响其余
+  // 6. 图片：交给 Saleor 按链接下载，4 张并行，单张失败不影响其余；标了颜色的图片关联到该颜色的规格
   const imageErrors = [];
-  for (const url of data.images) {
-    try {
-      await gql(`mutation($input: ProductMediaCreateInput!) {
-        productMediaCreate(input: $input) { media { id } errors { field message } }
-      }`, { input: { product: product.id, mediaUrl: url, alt: data.texts.en.name } }, token);
-    } catch (e) {
-      imageErrors.push(`${url}：${e.message}`);
+  const mediaIds = new Array(data.images.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < data.images.length) {
+      const i = next++;
+      const image = data.images[i];
+      const { url, color } = typeof image === 'string' ? { url: image, color: null } : image;
+      try {
+        const d = await gql(`mutation($input: ProductMediaCreateInput!) {
+          productMediaCreate(input: $input) { media { id } errors { field message } }
+        }`, { input: { product: product.id, mediaUrl: url, alt: [data.texts.en.name, color].filter(Boolean).join(' - ') } }, token);
+        const mediaId = d.productMediaCreate.media?.id;
+        mediaIds[i] = mediaId;
+        for (const variantId of (color && mediaId ? variantsByColor.get(color) ?? [] : [])) {
+          await gql(`mutation($media: ID!, $variant: ID!) {
+            variantMediaAssign(mediaId: $media, variantId: $variant) { errors { field message } }
+          }`, { media: mediaId, variant: variantId }, token);
+        }
+      } catch (e) {
+        imageErrors.push(`${url}：${e.message}`);
+      }
     }
+  };
+  await Promise.all(Array.from({ length: 4 }, worker));
+  // 并行下载打乱了先后，按提交顺序重新排列（第一张为主图）
+  const ordered = mediaIds.filter(Boolean);
+  if (ordered.length > 1) {
+    await gql(`mutation($product: ID!, $media: [ID!]!) {
+      productMediaReorder(productId: $product, mediaIds: $media) { errors { field message } }
+    }`, { product: product.id, media: ordered }, token).catch(() => {});
   }
 
   // 7. 记录来源链接，便于日后核对

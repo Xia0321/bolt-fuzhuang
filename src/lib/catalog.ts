@@ -13,10 +13,11 @@ const STORE_QUERY = /* GraphQL */ `
           translation(languageCode: $lang) { name description }
           category { id }
           collections { slug }
-          media { url(size: 1024) type }
+          media { id url(size: 1024) type }
           pricing { priceRange { start { gross { amount currency } } } }
           variants {
             id quantityAvailable
+            media { id }
             pricing { price { gross { amount currency } } }
             attributes {
               attribute { slug }
@@ -92,10 +93,11 @@ interface RawProduct {
   translation: Translated | null;
   category: { id: string } | null;
   collections: { slug: string }[] | null;
-  media: { url: string; type: string }[] | null;
+  media: { id: string; url: string; type: string }[] | null;
   pricing: { priceRange: { start: { gross: Money } | null } | null } | null;
   variants: {
     id: string; quantityAvailable: number | null;
+    media: { id: string }[] | null;
     pricing: { price: { gross: Money } | null } | null;
     attributes: RawAttribute[];
   }[] | null;
@@ -157,11 +159,17 @@ function mapProduct(p: RawProduct): Product {
 
   const colors: ProductColor[] = [];
   const sizes: string[] = [];
-  for (const { attrs } of rawVariants) {
+  // 各颜色专属图片：该颜色规格上关联的图片，按商品图片的顺序排列（同一颜色的规格关联的图片相同）
+  const productImages = (p.media || []).filter(m => m.type === 'IMAGE');
+  const colorImages: Record<string, string[]> = {};
+  for (const { raw, attrs } of rawVariants) {
     const color = attrs.color;
     if (color && !colors.some(c => c.slug === color.slug)) {
       colors.push({ slug: color.slug, name: valueName(color), hex: color.value || '#cccccc' });
     }
+    const ids = new Set((raw.media || []).map(m => m.id));
+    const images = productImages.filter(m => ids.has(m.id)).map(m => m.url);
+    if (color && images.length && !colorImages[color.slug]) colorImages[color.slug] = images;
   }
   for (const v of variants) {
     if (v.size && !sizes.includes(v.size)) sizes.push(v.size);
@@ -178,7 +186,8 @@ function mapProduct(p: RawProduct): Product {
     name: p.translation?.name || p.name,
     description: richTextToParagraphs(p.translation?.description).join('\n\n') || richTextToParagraphs(p.description).join('\n\n'),
     categoryId: p.category?.id ?? null,
-    images: (p.media || []).filter(m => m.type === 'IMAGE').map(m => m.url),
+    images: productImages.map(m => m.url),
+    colorImages,
     price: p.pricing?.priceRange?.start?.gross ?? null,
     sizes,
     colors,

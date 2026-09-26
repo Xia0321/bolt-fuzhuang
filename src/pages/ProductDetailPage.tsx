@@ -31,7 +31,9 @@ export function ProductDetailPage({ slug }: { slug: string }) {
     setSelectedImage(0);
     // 只有一个尺码（如 ONE SIZE）时直接选中
     setSelectedSize(product?.sizes.length === 1 ? product.sizes[0] : null);
-    setSelectedColor(product?.colors[0]?.slug ?? null);
+    // 默认选中与主图对应的颜色（商品列表显示的就是这张），没有颜色专属图片时选第一个
+    const mainColor = product?.colors.find(c => product.colorImages[c.slug]?.[0] === product.images[0]);
+    setSelectedColor(mainColor?.slug ?? product?.colors[0]?.slug ?? null);
     setQuantity(1);
     setAdded(false);
     setSizeError(false);
@@ -61,9 +63,11 @@ export function ProductDetailPage({ slug }: { slug: string }) {
       (product.sizes.length === 0 || v.size === size) && (product.colors.length === 0 || v.colorSlug === color));
   const sizeStock = (size: string) => findVariant(size, selectedColor)?.quantityAvailable ?? 0;
   const variant = findVariant(selectedSize, selectedColor);
-  const price = variant?.price ?? product.price;
+  // 还没选尺码时显示所选颜色的价格（各颜色可能定价不同）
+  const price = variant?.price ?? product.variants.find(v => v.colorSlug === selectedColor)?.price ?? product.price;
   const available = variant?.quantityAvailable ?? 0;
   const colorName = product.colors.find(c => c.slug === selectedColor)?.name;
+  const images = (selectedColor && product.colorImages[selectedColor]) || product.images;
   const threshold = freeShippingThreshold(shippingRules);
 
   const handleAddToCart = async () => {
@@ -101,9 +105,9 @@ export function ProductDetailPage({ slug }: { slug: string }) {
           {/* Images */}
           <div className="flex flex-col-reverse md:flex-row gap-4">
             {/* Thumbnails */}
-            {product.images.length > 1 && (
-              <div className="flex md:flex-col gap-3 md:w-20">
-                {product.images.map((img, i) => (
+            {images.length > 1 && (
+              <div className="flex md:flex-col gap-3 md:w-20 overflow-x-auto md:overflow-visible">
+                {images.map((img, i) => (
                   <button
                     key={i}
                     onClick={() => setSelectedImage(i)}
@@ -116,10 +120,10 @@ export function ProductDetailPage({ slug }: { slug: string }) {
             )}
             {/* Main image */}
             <div className="flex-1 aspect-[3/4] overflow-hidden bg-neutral-100">
-              {product.images[selectedImage] && (
+              {images[selectedImage] && (
                 <img
-                  key={selectedImage}
-                  src={product.images[selectedImage]}
+                  key={images[selectedImage]}
+                  src={images[selectedImage]}
                   alt={product.name}
                   className="w-full h-full object-cover animate-[fadeIn_0.4s_ease-out]"
                 />
@@ -153,11 +157,11 @@ export function ProductDetailPage({ slug }: { slug: string }) {
                 <label className="block text-[12px] tracking-[0.1em] uppercase font-medium text-neutral-900 mb-3">
                   {t('detail_color')}
                 </label>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   {product.colors.map(color => (
                     <button
                       key={color.slug}
-                      onClick={() => { setSelectedColor(color.slug); setAddError(''); }}
+                      onClick={() => { setSelectedColor(color.slug); setSelectedImage(0); setAddError(''); }}
                       className={`relative w-9 h-9 rounded-full border-2 transition-all ${selectedColor === color.slug ? 'border-neutral-900 ring-2 ring-neutral-900/10' : 'border-neutral-200'}`}
                       style={{ backgroundColor: color.hex }}
                       title={color.name}

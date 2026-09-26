@@ -34,6 +34,8 @@ export interface Product {
   description: string;
   categoryId: string | null;
   images: string[];
+  // 颜色 slug → 该颜色的图片；没有单独关联图片的颜色不在其中，显示全部图片
+  colorImages: Record<string, string[]>;
   price: Money | null;
   sizes: string[];
   colors: ProductColor[];

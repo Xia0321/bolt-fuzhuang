@@ -4,7 +4,9 @@
 //
 // 返回统一结构：
 //   { platform, sourceUrl, name, description, price: { amount, currency } | null,
-//     images: [url], sizes: [string], colors: [string] }
+//     images: [url], sizes: [string], colors: [string], keywords?: string,
+//     colorGroups?: [{ color, hint, url, price, images, sizes, current? }] }
+//   colorGroups：对方网站把每个颜色做成单独商品时，本商品及同款其他颜色各一项，可合并为一个商品的多个颜色
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
 
@@ -77,27 +79,99 @@ const COLOR_NAMES = /^(colou?r|colors|颜色|顏色|カラー|色|couleur|farbe)
 
 // ---------- Shopify ----------
 
+// 商品图集里混有色块小图（swatch）等非商品图：按说明文字、文件名和尺寸过滤
+const isSwatch = m => /swatch/i.test(`${m.alt ?? ''} ${m.src ?? ''}`) || (m.width > 0 && Math.max(m.width, m.height) < 500);
+
+const titleCase = s => String(s).toLowerCase().replace(/(^|[\s-])\S/g, c => c.toUpperCase()).trim();
+
+// 标题常见写法「款式 | 颜色」「款式 | 颜色 | 系列」
+const titleParts = title => String(title).split(/\s+\|\s+/).map(s => s.trim()).filter(Boolean);
+
+// 没有颜色选项的商品（一个颜色一个商品），从标签「color:颜色名=通用色」或标题中读出颜色
+function colorOfProduct(p) {
+  for (const tag of p.tags || []) {
+    const m = String(tag).match(/^colou?r\s*:\s*([^=]+?)\s*(?:=\s*(.+))?$/i);
+    if (m) return { name: titleCase(m[1]), hint: m[2]?.trim() ?? '' };
+  }
+  const parts = titleParts(p.title);
+  return parts.length > 1 ? { name: titleCase(parts[1]), hint: '' } : null;
+}
+
+// 页面上的颜色色块若链接到其他商品（对方网站把每个颜色做成单独商品），收集这些商品的 handle
+function siblingHandles(html, current) {
+  const handles = [];
+  for (const m of html.matchAll(/(?:href=["'][^"']*\/products\/|data-[\w-]*handle=["'])([\w-]+)/gi)) {
+    // 所在标签（从 < 到链接处）带有颜色、色块字样才算；有的主题把整段商品数据塞在属性里，标签很长，只看开头
+    const start = html.lastIndexOf('<', m.index);
+    if (/colou?r|swatch/i.test(html.slice(start, m.index))) handles.push(m[1]);
+  }
+  return unique(handles).filter(h => h !== current && !/gift-?card/i.test(h)).slice(0, 30);
+}
+
+async function mapLimit(list, limit, fn) {
+  const out = new Array(list.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, list.length) }, async () => {
+    while (next < list.length) {
+      const i = next++;
+      out[i] = await fn(list[i]).catch(() => null);
+    }
+  }));
+  return out;
+}
+
 async function scrapeShopify(url) {
   const u = new URL(url);
   const handle = u.pathname.match(/\/products\/([^/?#]+)/)?.[1];
   if (!handle) throw new ScrapeError('不是 Shopify 商品链接（应包含 /products/商品名）', 'BAD_URL');
   // Shopify 会按访问者所在地区换算币种，固定请求美元（店铺不支持时仍按其实际币种返回，由 cart.js 读出）
   const headers = { Cookie: 'cart_currency=USD; localization=US' };
-  const p = await get(`${u.origin}/products/${handle}.js`, { json: true, headers });
+  const load = h => get(`${u.origin}/products/${h}.js`, { json: true, headers });
+  const p = await load(handle);
   // 店铺币种：cart.js 不创建购物车，只返回空购物车信息
   const cart = await get(`${u.origin}/cart.js`, { json: true, headers }).catch(() => null);
-  const optionIndex = pattern => (p.options || []).findIndex(o => pattern.test(o.name ?? o));
-  const values = idx => (idx >= 0 ? unique(p.variants.map(v => v[`option${idx + 1}`])) : []);
-  return {
+  const currency = cart?.currency || '';
+  const optionIndex = (prod, pattern) => (prod.options || []).findIndex(o => pattern.test(o.name ?? o));
+  const values = (prod, idx) => (idx >= 0 ? unique(prod.variants.map(v => v[`option${idx + 1}`])) : []);
+  const imagesOf = prod => unique((prod.media?.length ? prod.media.filter(m => m.media_type === 'image' && !isSwatch(m)).map(m => m.src) : prod.images || [])
+    .map(i => absolute(i, u.origin)));
+  const priceOf = prod => (prod.price != null ? { amount: prod.price / 100, currency } : null);
+
+  const result = {
     platform: 'shopify',
     sourceUrl: url,
     name: p.title,
     description: htmlToText(p.description),
-    price: p.price != null ? { amount: p.price / 100, currency: cart?.currency || '' } : null,
-    images: unique((p.images || []).map(i => absolute(i, u.origin))),
-    sizes: values(optionIndex(SIZE_NAMES)),
-    colors: values(optionIndex(COLOR_NAMES)),
+    price: priceOf(p),
+    images: imagesOf(p),
+    sizes: values(p, optionIndex(p, SIZE_NAMES)),
+    colors: values(p, optionIndex(p, COLOR_NAMES)),
+    keywords: [p.type, ...(p.tags || [])].filter(Boolean).join(', '),
   };
+  if (result.colors.length) return result;
+
+  // 没有颜色选项：本商品就是一个颜色，再找同款的其他颜色（各自是单独的商品）
+  const own = colorOfProduct(p);
+  if (!own) return result;
+  const style = titleParts(p.title)[0];
+  if (titleParts(p.title).length > 1) result.name = style;
+  result.colors = [own.name];
+  const group = prod => ({
+    color: colorOfProduct(prod).name,
+    hint: colorOfProduct(prod).hint,
+    url: `${u.origin}/products/${prod.handle}`,
+    price: priceOf(prod),
+    images: imagesOf(prod),
+    sizes: values(prod, optionIndex(prod, SIZE_NAMES)),
+  });
+  const html = await get(url).catch(() => '');
+  const siblings = (await mapLimit(siblingHandles(html, handle), 6, load))
+    // 只保留同一款式：标题的款式部分相同、有颜色、不重复
+    .filter(s => s && titleParts(s.title)[0] === style && colorOfProduct(s))
+    .map(group)
+    .filter((g, i, list) => g.color !== own.name && list.findIndex(x => x.color === g.color) === i);
+  result.colorGroups = [{ ...group(p), current: true }, ...siblings];
+  return result;
 }
 
 // ---------- 通用独立站（JSON-LD / Open Graph） ----------

@@ -39,6 +39,14 @@
   .images label.on { border-color: var(--accent); }
   .images img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .images input { position: absolute; top: 6px; left: 6px; }
+  .images .tag { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; font-size: 11px; color: #fff; background: rgba(0,0,0,.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  .groups label { position: relative; margin: 0; border: 2px solid var(--line); border-radius: 6px; overflow: hidden; cursor: pointer; color: var(--text); font-size: 12px; }
+  .groups label.on { border-color: var(--accent); }
+  .groups img { width: 100%; aspect-ratio: 3/4; object-fit: cover; display: block; background: var(--soft); }
+  .groups input { position: absolute; top: 6px; left: 6px; }
+  .groups .info { padding: 4px 6px; line-height: 1.4; }
+  .groups .info .muted { font-size: 11px; }
   table { width: 100%; border-collapse: collapse; }
   th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   th { font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -133,10 +141,20 @@
     <div id="langPanels"></div>
     <div class="row" style="margin-top:8px"><button class="ghost" id="btnRetranslate">重新翻译</button></div>
 
+    <div id="groupsBox" class="hidden">
+      <h2 style="margin-top:24px">同款其他颜色 <span class="muted" id="groupCount"></span></h2>
+      <p class="muted" style="margin-top:-6px">对方网站把每个颜色做成了单独的商品。勾选的颜色会合并到这个商品里，每个颜色带上自己的图片，顾客在商品页切换颜色时显示对应图片；原价不同的颜色按原价比例换算售价。</p>
+      <div class="row" style="margin-bottom:8px">
+        <button class="ghost" id="btnGroupsAll">全选</button>
+        <button class="ghost" id="btnGroupsNone">只留当前颜色</button>
+      </div>
+      <div class="groups" id="groups"></div>
+    </div>
+
     <h2 style="margin-top:24px">图片 <span class="muted" id="imageCount"></span></h2>
     <div class="images" id="images"></div>
 
-    <h2 style="margin-top:24px">颜色</h2>
+    <h2 style="margin-top:24px">颜色 <span class="muted" id="colorCount"></span></h2>
     <table>
       <thead><tr><th style="width:52px">色值</th><th>English</th><th>中文</th><th>日本語</th><th class="muted">原文</th><th style="width:40px"></th></tr></thead>
       <tbody id="colors"></tbody>
@@ -174,7 +192,9 @@
   let token = '';
   let options = null;
   let scraped = null;
-  const state = { texts: { en: {}, zh: {}, ja: {} }, colors: [], images: [] };
+  // colors: [{ source, en, zh, ja, hex }]；images: [{ src, on, color }]，color 为所属颜色的原文名
+  // groupsOn[i]：同款其他颜色（scraped.colorGroups[i]）是否合并进来
+  const state = { texts: { en: {}, zh: {}, ja: {} }, colors: [], images: [], groupsOn: [] };
 
   // ---------- 与后台通信 ----------
   window.addEventListener('message', e => {
@@ -241,6 +261,11 @@
     const categoryLabel = c => (c.parent ? `${c.parent.name} / ` : '') + c.name;
     fill('category', options.categories, categoryLabel);
     fill('finalCategory', options.categories, categoryLabel);
+    // 不预选任何分类，避免没留意时落到列表第一个（Default Category）
+    for (const id of ['category', 'finalCategory']) {
+      $(id).insertAdjacentHTML('afterbegin', '<option value="">请选择分类</option>');
+      $(id).value = '';
+    }
     fill('warehouse', options.warehouses, w => w.name);
     $('step1').classList.remove('hidden');
     $('stepLink').classList.remove('hidden');
@@ -392,8 +417,14 @@
     const url = $('url').value.trim();
     if (!url) throw new Error('请粘贴商品链接');
     scraped = await api('/scrape', { url });
-    state.images = scraped.images.map(src => ({ src, on: true }));
-    $('sizes').value = scraped.sizes.join(', ');
+    const groups = scraped.colorGroups || [];
+    state.groupsOn = groups.map(() => true);
+    state.images = groups.length
+      ? groups.flatMap(g => g.images.map(src => ({ src, on: true, color: g.color })))
+      : scraped.images.map(src => ({ src, on: true, color: null }));
+    state.colors = [];
+    $('sizes').value = [...new Set(groups.length ? groups.flatMap(g => g.sizes) : scraped.sizes)].join(', ');
+    renderGroups();
     $('source').textContent = `${scraped.name}\n\n${scraped.description}`;
     $('warnings').innerHTML = `<p class="muted">已识别为：${esc(PLATFORM_NAMES[scraped.platform] || scraped.platform)}</p>`
       + (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
@@ -404,11 +435,11 @@
     } catch (err) {
       // 翻译失败时用原文预填三种语言，可手动修改后继续入库
       for (const lang of ['en', 'zh', 'ja']) state.texts[lang] = { name: scraped.name, description: scraped.description };
-      state.colors = scraped.colors.map(c => ({ source: c, en: c, zh: c, ja: c, hex: '#cccccc' }));
+      state.colors = allColors().map(offlineColor);
       renderTexts();
       renderColors();
       applyCategory(null);
-      $('warnings').insertAdjacentHTML('beforeend', `<div class="msg warn">翻译失败：${esc(err.message)}。已用原文预填，请手动修改或点「重新翻译」。</div>`);
+      $('warnings').insertAdjacentHTML('beforeend', `<div class="msg warn">翻译失败：${esc(err.message)}。已用原文预填，颜色按常用色名预填，恢复后点「重新翻译」即可补全三语。</div>`);
     }
     fillPrices();
     $('step2').classList.remove('hidden');
@@ -416,9 +447,18 @@
     $('step2').scrollIntoView({ behavior: 'smooth' });
   }));
 
+  // 抓到的所有颜色（含同款其他颜色）
+  const allColors = () => (scraped.colorGroups?.length ? scraped.colorGroups.map(g => g.color) : scraped.colors);
+  const groupOf = source => (scraped.colorGroups || []).findIndex(g => g.color === source);
+  // 同款其他颜色未勾选时，该颜色及其图片不显示、不入库
+  const colorOn = source => { const i = groupOf(source); return i < 0 || state.groupsOn[i]; };
+
   async function translate() {
     const auto = categoryMode() === 'auto';
-    const result = await api('/translate', { name: scraped.name, description: scraped.description, colors: scraped.colors, suggestCategory: auto });
+    // 重新翻译时连同手动添加的颜色一起翻译
+    const colors = state.colors.length ? state.colors.map(c => c.source || c.en).filter(Boolean) : allColors();
+    const colorHints = Object.fromEntries((scraped.colorGroups || []).filter(g => g.hint).map(g => [g.color, g.hint]));
+    const result = await api('/translate', { name: scraped.name, description: scraped.description, colors, colorHints, suggestCategory: auto });
     for (const lang of ['en', 'zh', 'ja']) state.texts[lang] = result[lang];
     state.colors = result.colors.map(c => ({ ...c, hex: /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : '#cccccc' }));
     applyCategory(auto ? result.categoryId : null);
@@ -428,21 +468,83 @@
 
   $('btnRetranslate').addEventListener('click', e => busy(e.target, '翻译中…', translate));
 
-  // 自动分类：使用 Claude 推荐的分类；指定分类：使用第 1 步选择的分类。
-  // 自动分类没有拿到推荐结果（如翻译失败）时改为指定分类，请手动选择
+  // 自动分类：使用 Claude 推荐的分类；Claude 不可用时用按商品名称关键词匹配的分类；都没有时留空让人选。
+  // 指定分类：使用第 1 步选择的分类
   function applyCategory(suggested) {
+    const valid = id => id && options.categories.some(c => c.id === id);
     if (categoryMode() === 'manual') {
       $('finalCategory').value = $('category').value;
       $('categoryHint').textContent = '· 指定分类';
-    } else if (suggested && options.categories.some(c => c.id === suggested)) {
+    } else if (valid(suggested)) {
       $('finalCategory').value = suggested;
       $('categoryHint').textContent = '· 自动分类，可修改';
+    } else if (valid(scraped?.categoryGuess)) {
+      $('finalCategory').value = scraped.categoryGuess;
+      $('categoryHint').textContent = '· 按商品名称匹配，请确认';
     } else {
-      setCategoryMode('manual');
-      $('finalCategory').value = $('category').value;
-      $('categoryHint').textContent = '· 未能自动分类，请确认';
+      $('finalCategory').value = '';
+      $('categoryHint').textContent = '· 未能自动分类，请选择';
     }
   }
+
+  // 翻译不可用时的颜色预填：按通用色（如 dark wash blue）或颜色名本身给出常用中日文叫法和色值
+  const BASIC_COLORS = [
+    [/dark\s*wash|dark\s*indigo/i, '深蓝水洗', 'ダークウォッシュ', '#1f2d4a'],
+    [/(medium|mid)\s*wash/i, '中蓝水洗', 'ミッドウォッシュ', '#4a6a94'],
+    [/light\s*wash/i, '浅蓝水洗', 'ライトウォッシュ', '#8fb0d0'],
+    [/\bnavy\b/i, '藏青色', 'ネイビー', '#1f2a44'],
+    [/\bindigo\b/i, '靛蓝色', 'インディゴ', '#2b3a67'],
+    [/\bblack\b/i, '黑色', 'ブラック', '#1a1a1a'],
+    [/\b(white|ivory)\b/i, '白色', 'ホワイト', '#f5f5f2'],
+    [/\b(ecru|cream|off.?white)\b/i, '米白色', 'エクリュ', '#efe6d2'],
+    [/\b(gr[ae]y|charcoal|greyscale)\b/i, '灰色', 'グレー', '#8a8a8a'],
+    [/\b(beige|sand|khaki|stone)\b/i, '卡其色', 'ベージュ', '#cdb893'],
+    [/\b(brown|camel|tan|chocolate)\b/i, '棕色', 'ブラウン', '#6b4a32'],
+    [/\b(green|olive)\b/i, '绿色', 'グリーン', '#56704a'],
+    [/\b(pink|rose)\b/i, '粉色', 'ピンク', '#e3a3b3'],
+    [/\b(red|burgundy|wine)\b/i, '红色', 'レッド', '#9e2b2b'],
+    [/\bblue\b/i, '蓝色', 'ブルー', '#3a5a8c'],
+  ];
+  function offlineColor(source) {
+    const hint = (scraped.colorGroups || []).find(g => g.color === source)?.hint || '';
+    // 对方给了通用色（如 dark wash blue）时以它为准，否则看颜色名本身
+    const d = (hint && BASIC_COLORS.find(([re]) => re.test(hint))) || BASIC_COLORS.find(([re]) => re.test(source));
+    if (!d) return { source, en: source, zh: source, ja: source, hex: '#cccccc' };
+    // 颜色名就是常用色（如 Black）时直接用译名；花式名称（如 Nightfall Rinse）保留原名，以便区分同一通用色的不同颜色
+    const plain = d[0].test(source) && !/\s/.test(source.trim());
+    return plain
+      ? { source, en: source, zh: d[1], ja: d[2], hex: d[3] }
+      : { source, en: source, zh: `${d[1]}（${source}）`, ja: `${d[2]}（${source}）`, hex: d[3] };
+  }
+
+  // ---------- 同款其他颜色 ----------
+  function renderGroups() {
+    const groups = scraped.colorGroups || [];
+    $('groupsBox').classList.toggle('hidden', groups.length < 2);
+    const main = scraped.price?.amount;
+    $('groups').innerHTML = groups.map((g, i) => {
+      const diff = g.price && main && g.price.amount !== main ? `原价 ${g.price.amount}，按比例定价` : g.price ? `原价 ${g.price.amount}` : '';
+      return `<label class="${state.groupsOn[i] ? 'on' : ''}">
+        <input type="checkbox" data-g="${i}" ${state.groupsOn[i] ? 'checked' : ''} ${g.current ? 'disabled' : ''} />
+        ${g.images[0] ? `<img src="${esc(g.images[0])}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : '<img alt="" />'}
+        <div class="info">${esc(g.color)}${g.current ? '（当前）' : ''}<div class="muted">${esc(diff)} · ${g.images.length} 张图</div></div>
+      </label>`;
+    }).join('');
+    $('groupCount').textContent = `已选 ${state.groupsOn.filter(Boolean).length} / ${groups.length}`;
+  }
+  function setGroups(fn) {
+    state.groupsOn = (scraped.colorGroups || []).map((g, i) => g.current || fn(i));
+    renderGroups();
+    renderImages();
+    renderColors();
+  }
+  $('groups').addEventListener('change', e => {
+    const i = e.target.dataset.g;
+    if (i === undefined) return;
+    setGroups(j => (j === Number(i) ? e.target.checked : state.groupsOn[j]));
+  });
+  $('btnGroupsAll').addEventListener('click', () => setGroups(() => true));
+  $('btnGroupsNone').addEventListener('click', () => setGroups(() => false));
 
   // ---------- 文案 ----------
   let currentLang = 'en';
@@ -469,12 +571,15 @@
   });
 
   // ---------- 图片 ----------
+  const imageShown = img => !img.color || colorOn(img.color);
   function renderImages() {
-    $('images').innerHTML = state.images.map((img, i) => `
+    const shown = state.images.filter(imageShown);
+    $('images').innerHTML = state.images.map((img, i) => (imageShown(img) ? `
       <label class="${img.on ? 'on' : ''}"><input type="checkbox" data-i="${i}" ${img.on ? 'checked' : ''} />
-      <img src="${esc(img.src)}" alt="" loading="lazy" referrerpolicy="no-referrer" /></label>`).join('')
+      <img src="${esc(img.src)}" alt="" loading="lazy" referrerpolicy="no-referrer" />
+      ${img.color && shown.some(x => x.color !== img.color) ? `<span class="tag">${esc(img.color)}</span>` : ''}</label>` : '')).join('')
       || '<p class="muted">没有抓到图片</p>';
-    $('imageCount').textContent = `已选 ${state.images.filter(i => i.on).length} / ${state.images.length}`;
+    $('imageCount').textContent = `已选 ${shown.filter(i => i.on).length} / ${shown.length}`;
   }
   $('images').addEventListener('change', e => {
     const i = e.target.dataset.i;
@@ -485,7 +590,9 @@
 
   // ---------- 颜色 ----------
   function renderColors() {
-    $('colors').innerHTML = state.colors.map((c, i) => `
+    const shown = state.colors.filter(c => colorOn(c.source));
+    $('colorCount').textContent = shown.length ? `共 ${shown.length} 个` : '';
+    $('colors').innerHTML = state.colors.map((c, i) => (!colorOn(c.source) ? '' : `
       <tr>
         <td><input type="color" data-i="${i}" data-f="hex" value="${esc(c.hex)}" /></td>
         <td><input type="text" data-i="${i}" data-f="en" value="${esc(c.en)}" /></td>
@@ -493,7 +600,7 @@
         <td><input type="text" data-i="${i}" data-f="ja" value="${esc(c.ja)}" /></td>
         <td class="muted">${esc(c.source)}</td>
         <td><button class="ghost" data-remove="${i}" title="删除">×</button></td>
-      </tr>`).join('') || '<tr><td colspan="6" class="muted">没有抓到颜色，请点击「添加颜色」</td></tr>';
+      </tr>`)).join('') || '<tr><td colspan="6" class="muted">没有抓到颜色，请点击「添加颜色」</td></tr>';
   }
   $('colors').addEventListener('input', e => {
     const { i, f } = e.target.dataset;
@@ -502,6 +609,9 @@
   $('colors').addEventListener('click', e => {
     const i = e.target.dataset.remove;
     if (i === undefined) return;
+    // 同款其他颜色：删除即取消勾选（可在上方重新勾选）；其余颜色直接删除
+    const g = groupOf(state.colors[i].source);
+    if (g >= 0 && !scraped.colorGroups[g].current) return setGroups(j => (j === g ? false : state.groupsOn[j]));
     state.colors.splice(Number(i), 1);
     renderColors();
   });
@@ -532,7 +642,18 @@
     for (const lang of ['en', 'zh', 'ja']) {
       if (!state.texts[lang].name?.trim()) throw new Error('请填写三种语言的商品名称');
     }
-    if (state.colors.some(c => !c.en.trim())) throw new Error('颜色的英文名称不能为空');
+    const colors = state.colors.filter(c => colorOn(c.source));
+    if (colors.some(c => !c.en.trim())) throw new Error('颜色的英文名称不能为空');
+    const names = colors.map(c => c.en.trim().toLowerCase());
+    if (new Set(names).size !== names.length) throw new Error('有重复的颜色英文名称，请修改');
+    if (!$('finalCategory').value) throw new Error('请选择分类');
+    // 各颜色原价不同时，按原价比例换算售价
+    const main = scraped.price?.amount;
+    const ratio = source => {
+      const g = (scraped.colorGroups || [])[groupOf(source)];
+      return g?.price?.amount && main ? g.price.amount / main : 1;
+    };
+    const enOf = source => colors.find(c => c.source === source)?.en.trim() || null;
     const prices = {};
     document.querySelectorAll('[data-channel]').forEach(input => { if (Number(input.value) > 0) prices[input.dataset.channel] = Number(input.value); });
     const result = await api('/import', {
@@ -542,10 +663,10 @@
       stock: Number($('stock').value) || 0,
       sourceUrl: scraped.sourceUrl,
       texts: state.texts,
-      colors: state.colors.map(c => ({ en: c.en.trim(), zh: c.zh.trim(), ja: c.ja.trim(), hex: c.hex })),
+      colors: colors.map(c => ({ en: c.en.trim(), zh: c.zh.trim(), ja: c.ja.trim(), hex: c.hex, priceRatio: ratio(c.source) })),
       sizes: $('sizes').value.split(/[,，、]/).map(s => s.trim()).filter(Boolean),
       prices,
-      images: state.images.filter(i => i.on).map(i => i.src),
+      images: state.images.filter(i => i.on && imageShown(i)).map(i => ({ url: i.src, color: i.color ? enOf(i.color) : null })),
     });
     const extra = result.imageErrors?.length ? `，${result.imageErrors.length} 张图片下载失败` : '';
     show(`已入库（未发布），共 ${result.variants} 个规格${extra}。正在打开商品页…`, 'ok');

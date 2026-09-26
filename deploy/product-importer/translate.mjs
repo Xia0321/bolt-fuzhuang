@@ -59,14 +59,37 @@ const SYSTEM = `你是服装品牌 PINSO（品帅牛仔）独立站的商品编�
 请输出英文（en）、简体中文（zh）、日文（ja）三个版本：
 - name：简洁的商品名，去掉原平台的店铺名、促销词、SEO 堆砌词和尺码信息，保留品类与关键材质/版型，例如「Camel Wool Long Coat」「驼色羊毛长大衣」
 - description：自然流畅的商品描述，保留材质、版型、尺寸说明、洗护等事实信息，去掉原平台的物流、售后、促销、店铺相关内容，不要编造原文没有的信息；段落之间用换行分隔
-- colors：原文每个颜色名各一项，source 与原文完全一致；en/zh/ja 为该颜色在服装电商中的常用叫法；hex 为该颜色的近似色值（#RRGGBB）
+- colors：原文每个颜色名各一项，source 与原文完全一致；en/zh/ja 为该颜色在服装电商中的常用叫法；hex 为该颜色的近似色值（#RRGGBB）。
+  colorHints 给出部分颜色的通用色（如 "Nightfall Rinse" → "dark wash blue"），牛仔水洗名这类花式名称请参考通用色给出易懂的中日文叫法（如「深蓝水洗」「ダークウォッシュ」）和色值
+- 如果 colors 有多个颜色，这些颜色会合并为同一个商品，description 中只描述某一个颜色/水洗的句子请删掉或改写为通用描述
 - categoryId：如果提供了 categories（本店现有分类），从中选出最适合该商品的一个，返回其 id`;
 
+// Claude Code 的报错里带有额度恢复时间，如 "You've hit your session limit · resets 8:50am (UTC)"，转成中文
+export function explainClaudeError(e) {
+  const m = String(e.message).match(/(?:session|usage|weekly)?\s*limit[^·]*·\s*resets\s+([^()]+?)\s*\((UTC|[^)]+)\)/i);
+  if (!m) return e;
+  let when = m[1].trim();
+  const t = when.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i);
+  if (t && m[2] === 'UTC') {
+    const hour = (Number(t[1]) % 12) + (/pm/i.test(t[3]) ? 12 : 0);
+    when = `北京时间 ${String((hour + 8) % 24).padStart(2, '0')}:${t[2] ?? '00'}`;
+  }
+  return new Error(`Claude 订阅额度暂时用完，${when} 恢复`);
+}
+
 // categories: [{ id, name }]，本店现有分类，用于推荐
-export async function translateProduct({ name, description, colors, categories = [] }) {
-  const input = JSON.stringify({ name, description, colors, categories });
+// colorHints: { 颜色名: 通用色 }
+export async function translateProduct({ name, description, colors, colorHints = {}, categories = [] }) {
+  const input = JSON.stringify({ name, description, colors, colorHints, categories });
   const format = schema(categories.map(c => c.id));
-  return translateBackend() === 'claude-code' ? viaClaudeCode(input, format) : viaApi(input, format);
+  if (translateBackend() !== 'claude-code') return viaApi(input, format);
+  try {
+    return await viaClaudeCode(input, format);
+  } catch (e) {
+    // 订阅额度用完等情况下，配置了 API Key 就改用 API（按用量计费）
+    if (process.env.ANTHROPIC_API_KEY) return viaApi(input, format);
+    throw explainClaudeError(e);
+  }
 }
 
 // Claude Code 无人值守模式：关闭所有工具，只做翻译

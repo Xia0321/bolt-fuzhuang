@@ -10,8 +10,8 @@
 //   GET  /api/options    商品类型、分类、渠道、仓库
 //   POST /api/discover   { categoryId, refresh? }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
 //                        返回逐行 JSON 流（application/x-ndjson），实时推送搜索进度与结果，事件见 discover.mjs
-//   POST /api/scrape     { url, platform? }  平台默认自动识别
-//   POST /api/translate  { name, description, colors, suggestCategory }
+//   POST /api/scrape     { url, platform? }  平台默认自动识别；另返回 categoryGuess（按关键词猜的分类，翻译失败时兜底）
+//   POST /api/translate  { name, description, colors, colorHints, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
 //   POST /api/translate-fields  { name, description } → { en, zh, ja }  后台表单（新建分类弹窗等）的字段翻译
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
@@ -33,6 +33,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateFields, translateProduct } from './translate.mjs';
+import { guessCategory } from './category.mjs';
 import { discoverStream } from './discover.mjs';
 import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
@@ -174,17 +175,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.method === 'POST' && route === '/api/scrape') {
       const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
-      log({ event: 'scraped', staff, platform: input.platform, url: input.url });
+      product.categoryGuess = guessCategory(product, (await loadOptions(appToken)).categories);
+      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colorGroups?.length ?? product.colors.length });
       return send(res, 200, product);
     }
     if (req.method === 'POST' && route === '/api/translate') {
       if (!translateBackend()) return send(res, 503, { error: '服务器未配置 CLAUDE_CODE_OAUTH_TOKEN（订阅额度）或 ANTHROPIC_API_KEY，无法翻译' });
       // 自动分类时把现有分类交给 Claude 推荐；指定分类时不需要
-      const categories = input.suggestCategory ? (await loadOptions(appToken)).categories : [];
+      // 默认分类是 Saleor 自带的占位分类，不参与推荐
+      const categories = input.suggestCategory ? (await loadOptions(appToken)).categories.filter(c => c.slug !== 'default-category') : [];
       const result = await translateProduct({
         name: String(input.name ?? ''),
         description: String(input.description ?? ''),
         colors: Array.isArray(input.colors) ? input.colors.map(String) : [],
+        colorHints: input.colorHints && typeof input.colorHints === 'object' ? input.colorHints : {},
         categories: categories.map(c => ({ id: c.id, name: c.parent ? `${c.parent.name} / ${c.name}` : c.name })),
       });
       return send(res, 200, result);
