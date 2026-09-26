@@ -8,7 +8,7 @@
 //   POST /register       Saleor 安装应用时回传应用令牌；收到后稍等安装完成再向 Saleor 验证，确认属于本应用才启用
 //   GET  /               后台中打开的操作页面
 //   GET  /api/options    商品类型、分类、渠道、仓库
-//   POST /api/discover   { categoryId }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
+//   POST /api/discover   { categoryId, refresh? }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
 //   POST /api/scrape     { url, platform? }  平台默认自动识别
 //   POST /api/translate  { name, description, colors, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
@@ -143,8 +143,8 @@ const server = http.createServer(async (req, res) => {
       const category = categories.find(c => c.id === input.categoryId);
       if (!category) return send(res, 400, { error: '请先选择分类' });
       const name = category.parent ? `${category.parent.name} / ${category.name}` : category.name;
-      const result = await discover(name);
-      log({ event: 'discovered', staff, category: name, found: result.pages.length, searched: result.searched });
+      const result = await discover(name, { refresh: Boolean(input.refresh) });
+      log({ event: 'discovered', staff, category: name, found: result.pages.length, searched: result.searched, cached: Boolean(result.cachedAt), searchMs: result.searchMs, verifyMs: result.verifyMs });
       return send(res, 200, result);
     }
     if (req.method === 'POST' && route === '/api/scrape') {

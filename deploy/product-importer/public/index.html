@@ -83,6 +83,7 @@
       <div class="row">
         <div style="min-width:240px"><select id="category"></select></div>
         <button class="ghost" id="btnDiscover">帮我找货源</button>
+        <button class="ghost hidden" id="btnRefresh">换一批</button>
       </div>
     </div>
     <p class="muted" id="categoryModeHint">贴链接后根据商品内容从现有分类中自动选择，入库前可修改。</p>
@@ -239,19 +240,28 @@
       : '商品放到所选分类下。不知道去哪里找商品链接时，点「帮我找货源」。';
     if (mode === 'auto') $('discoverResult').classList.add('hidden');
   }
-  $('category').addEventListener('change', () => $('discoverResult').classList.add('hidden'));
+  $('category').addEventListener('change', () => {
+    $('discoverResult').classList.add('hidden');
+    $('btnRefresh').classList.add('hidden');
+  });
   document.querySelectorAll('input[name=categoryMode]').forEach(r => r.addEventListener('change', () => setCategoryMode(categoryMode())));
 
   // ---------- 找货源：搜索分类页 / 列表页，运营打开后自己挑选商品 ----------
-  $('btnDiscover').addEventListener('click', e => busy(e.target, '搜索中，约 1～3 分钟…', async () => {
+  $('btnDiscover').addEventListener('click', e => discoverSources(e.target, false));
+  $('btnRefresh').addEventListener('click', e => discoverSources(e.target, true));
+
+  // refresh 为 true 时不用缓存，重新联网搜索一批
+  const discoverSources = (button, refresh) => busy(button, '搜索中，约半分钟…', async () => {
     show('');
     $('discoverResult').classList.remove('hidden');
     $('discoverStatus').textContent = `正在联网搜索「${$('category').selectedOptions[0]?.text ?? ''}」的货源分类页，并逐个检查能否打开…`;
     $('finds').innerHTML = '';
-    const { pages, searched } = await api('/discover', { categoryId: $('category').value });
+    const { pages, searched, cachedAt } = await api('/discover', { categoryId: $('category').value, refresh });
+    const cachedNote = cachedAt ? `（${Math.max(1, Math.round((Date.now() - cachedAt) / 60000))} 分钟前的搜索结果，想要新的请点「换一批」）` : '';
     $('discoverStatus').textContent = pages.length
-      ? `找到 ${pages.length} 个货源页面。点「打开挑选」在新窗口浏览，看中哪件商品，就打开它的详情页，把地址栏的链接复制到下面第 2 步。`
-      : `找到 ${searched} 个候选，但都无法打开，请再搜一次或换个分类。`;
+      ? `找到 ${pages.length} 个货源页面${cachedNote}。点「打开挑选」在新窗口浏览，看中哪件商品，就打开它的详情页，把地址栏的链接复制到下面第 2 步。`
+      : `找到 ${searched} 个候选，但都无法打开，请点「换一批」或换个分类。`;
+    $('btnRefresh').classList.remove('hidden');
     $('finds').innerHTML = pages.map((p, i) => `
       <div class="find">
         ${p.previews.length ? `<div class="previews">${p.previews.map(src => `<img src="${esc(src)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`).join('')}</div>` : ''}
@@ -267,7 +277,7 @@
         </div>
       </div>`).join('');
     $('finds').dataset.items = JSON.stringify(pages.map(p => p.url));
-  }));
+  });
 
   $('finds').addEventListener('click', async e => {
     const copy = e.target.dataset.copy;

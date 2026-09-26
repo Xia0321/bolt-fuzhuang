@@ -42,7 +42,7 @@ const SYSTEM = `你是服装品牌 PINSO（品帅牛仔，主营牛仔及休闲�
 - 优先批发、一件代发（dropshipping）、允许分销的供应商和店铺
 - 与分类高度相关，风格偏牛仔、休闲服饰
 - 不要淘宝、天猫、京东、1688、拼多多（导入工具无法抓取这些平台的商品）
-- 来源尽量多样，同一网站最多 2 条
+- 每个网站只给 1 个页面，不要同一网站的不同筛选、排序、分页链接
 - 除亚马逊搜索链接外，只返回在搜索结果中实际看到的链接，不要自行拼造
 - title 写页面上的分类名称；note 用一句中文说明这个来源的特点（如「牛仔品牌官网，款式偏复古」「批发供应商，支持一件代发」）`;
 
@@ -50,7 +50,8 @@ async function fetchWithTimeout(url, { json = false } = {}) {
   const res = await fetch(url, {
     headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9', Cookie: 'cart_currency=USD; localization=US' },
     redirect: 'follow',
-    signal: AbortSignal.timeout(15_000),
+    // 只是检查能否打开，慢的网站直接跳过
+    signal: AbortSignal.timeout(8_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return json ? res.json() : res.text();
@@ -85,7 +86,7 @@ async function inspect(page) {
   return base;
 }
 
-async function inspectAll(pages, limit = 4) {
+async function inspectAll(pages, limit = 8) {
   const results = [];
   let next = 0;
   async function worker() {
@@ -104,32 +105,51 @@ async function inspectAll(pages, limit = 4) {
   return results;
 }
 
-export async function discover(categoryName, count = 8) {
+const siteKey = url => new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+
+// 同一分类 12 小时内重复搜索直接返回上次结果，不消耗额度；refresh 为 true 时重新搜索
+const CACHE_TTL = 12 * 3600_000;
+const cache = new Map(); // 分类名 → { result, at }
+
+export async function discover(categoryName, { count = 8, refresh = false } = {}) {
+  const cached = cache.get(categoryName);
+  if (!refresh && cached && Date.now() - cached.at < CACHE_TTL) return { ...cached.result, cachedAt: cached.at };
+
+  const t0 = Date.now();
   const { pages } = await runClaudeCode({
     system: SYSTEM,
-    input: `商品分类：${categoryName}\n请找出 ${count + 4} 个候选页面（会逐个检查，多给一些以便淘汰）。`,
+    input: `商品分类：${categoryName}\n请找出 ${count + 3} 个候选页面（每个网站 1 个，会逐个检查，多给几个以便淘汰）。`,
     schema: SCHEMA,
     tools: 'WebSearch',
-    maxTurns: 20,
+    // 找链接不需要深入推理，用低强度加快速度
+    effort: 'low',
+    maxTurns: 12,
     timeoutMs: 180_000,
   });
+  const searchMs = Date.now() - t0;
+
+  // 按网站去重：同一网站只检查第一个页面
   const seen = new Set();
   const candidates = pages.filter(p => {
     try {
       const u = new URL(p.url);
-      const key = u.origin + u.pathname + u.search;
-      if (seen.has(key) || !/^https?:$/.test(u.protocol)) return false;
-      seen.add(key);
+      if (!/^https?:$/.test(u.protocol) || seen.has(siteKey(u.href))) return false;
+      seen.add(siteKey(u.href));
       return true;
     } catch {
       return false;
     }
   });
   const checked = await inspectAll(candidates);
-  // 有预览图、商品多的排前面，亚马逊放最后
+  const verifyMs = Date.now() - t0 - searchMs;
+
+  // 有预览图、商品多的排前面，亚马逊放最后；检查后再按网站去重一次（跳转后可能落到同一网站）
   const score = r => (r.previews.length ? 2 : 0) + (r.count ? Math.min(r.count, 50) / 50 : 0) - (r.platform === 'amazon' ? 1 : 0);
-  return {
-    pages: checked.sort((a, b) => score(b) - score(a)).slice(0, count),
-    searched: candidates.length,
-  };
+  const bySite = new Map();
+  for (const r of checked.sort((a, b) => score(b) - score(a))) {
+    if (!bySite.has(siteKey(r.url))) bySite.set(siteKey(r.url), r);
+  }
+  const result = { pages: [...bySite.values()].slice(0, count), searched: candidates.length, searchMs, verifyMs };
+  cache.set(categoryName, { result, at: Date.now() });
+  return result;
 }
