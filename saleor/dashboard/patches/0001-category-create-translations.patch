@@ -1,8 +1,8 @@
 diff --git a/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx b/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
-index 4bac2d2..ace4c55 100644
+index 4bac2d2..395be6d 100644
 --- a/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
 +++ b/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
-@@ -9,11 +9,16 @@ import { type ProductErrorFragment } from "@dashboard/graphql";
+@@ -9,11 +9,17 @@ import { type ProductErrorFragment } from "@dashboard/graphql";
  import { type SubmitPromise } from "@dashboard/hooks/useForm";
  import { buttonMessages } from "@dashboard/intl";
  import { type OutputData } from "@editorjs/editorjs";
@@ -14,13 +14,14 @@ index 4bac2d2..ace4c55 100644
  import { messages } from "./messages";
 +import {
 +  type CategoryTranslations,
++  englishSlug,
 +  fetchCategoryTranslations,
 +  TRANSLATION_LANGUAGES,
 +} from "./pinsoTranslations";
  
  interface CreateCategoryFormData {
    name: string;
-@@ -32,6 +37,8 @@ interface CreateCategoryDialogProps {
+@@ -32,6 +38,8 @@ interface CreateCategoryDialogProps {
    onSubmit: (data: {
      name: string;
      description: OutputData | null;
@@ -29,7 +30,7 @@ index 4bac2d2..ace4c55 100644
    }) => SubmitPromise<ProductErrorFragment[]>;
  }
  
-@@ -68,6 +75,11 @@ export const CreateCategoryDialog = ({
+@@ -68,6 +76,11 @@ export const CreateCategoryDialog = ({
    const [showApiErrors, setShowApiErrors] = useState(false);
    // null = not synced yet, so the first open (including mount-with-open) still resets.
    const [prevOpen, setPrevOpen] = useState<boolean | null>(null);
@@ -41,7 +42,7 @@ index 4bac2d2..ace4c55 100644
    const isChild = Boolean(parentId);
    const initialForm: CreateCategoryFormData = {
      name: "",
-@@ -81,8 +93,41 @@ export const CreateCategoryDialog = ({
+@@ -81,8 +94,41 @@ export const CreateCategoryDialog = ({
      setPrevOpen(open);
      setSubmitErrors([]);
      setShowApiErrors(false);
@@ -83,7 +84,7 @@ index 4bac2d2..ace4c55 100644
    const fieldErrors = [...(showApiErrors ? apiErrors : []), ...submitErrors]
      .map(error => error.message)
      .filter(Boolean)
-@@ -99,6 +144,7 @@ export const CreateCategoryDialog = ({
+@@ -99,6 +145,7 @@ export const CreateCategoryDialog = ({
              const errors = await onSubmit({
                name: data.name.trim(),
                description: plainTextToEditorJsData(data.description),
@@ -91,7 +92,7 @@ index 4bac2d2..ace4c55 100644
              });
  
              setSubmitErrors(errors ?? []);
-@@ -141,6 +187,67 @@ export const CreateCategoryDialog = ({
+@@ -141,6 +188,74 @@ export const CreateCategoryDialog = ({
                        rows={4}
                        data-test-id="category-description-input"
                      />
@@ -134,6 +135,13 @@ index 4bac2d2..ace4c55 100644
 +                              disabled={disabled || translating}
 +                              rows={3}
 +                            />
++                            {lang.code === "EN" && englishSlug(translations) ? (
++                              <Text size={2} color="default2">
++                                {intl.formatMessage(messages.pinsoSlugHint, {
++                                  slug: englishSlug(translations),
++                                })}
++                              </Text>
++                            ) : null}
 +                          </Box>
 +                        ))}
 +                        <Box display="flex" alignItems="center" gap={3}>
@@ -159,7 +167,7 @@ index 4bac2d2..ace4c55 100644
                      {fieldErrors ? (
                        <Text size={2} color="critical1" as="p">
                          {fieldErrors}
-@@ -155,7 +262,7 @@ export const CreateCategoryDialog = ({
+@@ -155,7 +270,7 @@ export const CreateCategoryDialog = ({
                  <ConfirmButton
                    transitionState={confirmButtonState}
                    onClick={submit}
@@ -169,45 +177,49 @@ index 4bac2d2..ace4c55 100644
                  >
                    <FormattedMessage {...buttonMessages.create} />
 diff --git a/src/categories/components/CreateCategoryDialog/messages.ts b/src/categories/components/CreateCategoryDialog/messages.ts
-index d627df8..3315966 100644
+index d627df8..4b4e81f 100644
 --- a/src/categories/components/CreateCategoryDialog/messages.ts
 +++ b/src/categories/components/CreateCategoryDialog/messages.ts
-@@ -35,4 +35,29 @@ export const messages = defineMessages({
+@@ -35,4 +35,33 @@ export const messages = defineMessages({
      id: "xl7Fag",
      defaultMessage: "Category created",
    },
 +  // PINSO：补充其他语言翻译（仅中文界面使用，直接以中文作为默认文案）
 +  pinsoTranslateToggle: {
-+    id: "pinsoCatTrToggle",
++    id: "h5AOm0",
 +    defaultMessage: "补充其他语言翻译（Claude 自动翻译，可修改）",
 +  },
 +  pinsoTranslating: {
-+    id: "pinsoCatTrLoading",
++    id: "qTrvaR",
 +    defaultMessage: "正在翻译…",
 +  },
 +  pinsoRetranslate: {
-+    id: "pinsoCatTrRetry",
++    id: "zMWigF",
 +    defaultMessage: "重新翻译",
 +  },
 +  pinsoNeedName: {
-+    id: "pinsoCatTrNeedName",
++    id: "T9l86n",
 +    defaultMessage: "请先填写分类名称，再补充翻译",
 +  },
++  pinsoSlugHint: {
++    id: "ZdWbL6",
++    defaultMessage: "前台网址将使用英文名：/shop/{slug}（被占用时自动加序号）",
++  },
 +  pinsoTranslationsSaved: {
-+    id: "pinsoCatTrSaved",
++    id: "6wtzKf",
 +    defaultMessage: "已保存英文、日文翻译",
 +  },
 +  pinsoTranslationsFailed: {
-+    id: "pinsoCatTrFailed",
++    id: "MnUl59",
 +    defaultMessage: "分类已创建，但以下语言的翻译保存失败，请到「翻译」中补充：{languages}",
 +  },
  });
 diff --git a/src/categories/components/CreateCategoryDialog/pinsoTranslations.ts b/src/categories/components/CreateCategoryDialog/pinsoTranslations.ts
 new file mode 100644
-index 0000000..7c217d9
+index 0000000..4321ac6
 --- /dev/null
 +++ b/src/categories/components/CreateCategoryDialog/pinsoTranslations.ts
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,141 @@
 +// PINSO：新建分类时补充其他语言翻译。
 +// 调用商品导入服务（deploy/product-importer）的 /api/translate-fields，由 Claude 翻译名称和描述，
 +// 分类创建成功后通过 categoryTranslate 保存各语言翻译。
@@ -274,6 +286,33 @@ index 0000000..7c217d9
 +  );
 +};
 +
++// 用英文名生成网址标识（slug），如 "Straight Leg Jeans" → "straight-leg-jeans"；生成不了时返回空字符串
++export const englishSlug = (translations: CategoryTranslations | null | undefined): string =>
++  (translations?.[LanguageCodeEnum.EN]?.name ?? "")
++    .toLowerCase()
++    .normalize("NFKD")
++    .replace(/[\u0300-\u036f]/g, "")
++    .replace(/&/g, " and ")
++    .replace(/[^a-z0-9]+/g, "-")
++    .replace(/^-+|-+$/g, "")
++    .slice(0, 80);
++
++// 用指定的网址标识创建；标识被占用时依次尝试 -2、-3…（最多 6 次）。baseSlug 为空时按 Saleor 默认方式创建
++export const createWithSlug = async <T>(
++  baseSlug: string,
++  create: (slug: string) => Promise<T>,
++  isSlugTaken: (result: T) => boolean,
++): Promise<T> => {
++  for (let attempt = 0; ; attempt++) {
++    const slug = baseSlug && attempt ? `${baseSlug}-${attempt + 1}` : baseSlug;
++    const result = await create(slug);
++
++    if (!baseSlug || !isSlugTaken(result) || attempt >= 5) {
++      return result;
++    }
++  }
++};
++
 +const plainTextToEditorJs = (text: string): OutputData => ({
 +  blocks: text
 +    .split("\n")
@@ -323,7 +362,7 @@ index 0000000..7c217d9
 +  return failed;
 +};
 diff --git a/src/categories/views/CategoryDetails.tsx b/src/categories/views/CategoryDetails.tsx
-index db445e1..d146673 100644
+index db445e1..6a454a1 100644
 --- a/src/categories/views/CategoryDetails.tsx
 +++ b/src/categories/views/CategoryDetails.tsx
 @@ -1,3 +1,4 @@
@@ -331,15 +370,19 @@ index db445e1..d146673 100644
  import { CategoryBulkDeleteDialog } from "@dashboard/categories/components/CategoryBulkDeleteDialog/CategoryBulkDeleteDialog";
  import { CategoryDeleteImageDialog } from "@dashboard/categories/components/CategoryDeleteImageDialog/CategoryDeleteImageDialog";
  import { CategoryMetadataDialog } from "@dashboard/categories/components/CategoryMetadataDialog/CategoryMetadataDialog";
-@@ -38,6 +39,7 @@ import { CategoryUpdatePage } from "../components/CategoryUpdatePage/CategoryUpd
+@@ -38,6 +39,11 @@ import { CategoryUpdatePage } from "../components/CategoryUpdatePage/CategoryUpd
  import { type CategoryUpdateData } from "../components/CategoryUpdatePage/form";
  import { CreateCategoryDialog } from "../components/CreateCategoryDialog/CreateCategoryDialog";
  import { messages as createCategoryMessages } from "../components/CreateCategoryDialog/messages";
-+import { saveCategoryTranslations } from "../components/CreateCategoryDialog/pinsoTranslations";
++import {
++  createWithSlug,
++  englishSlug,
++  saveCategoryTranslations,
++} from "../components/CreateCategoryDialog/pinsoTranslations";
  import {
    categoryListUrl,
    categoryUrl,
-@@ -70,6 +72,7 @@ const toPaginatorContext = (pagination: {
+@@ -70,6 +76,7 @@ const toPaginatorContext = (pagination: {
  const CategoryDetails = ({ id, params }: CategoryDetailsProps) => {
    const navigate = useNavigator();
    const notify = useNotifier();
@@ -347,18 +390,41 @@ index db445e1..d146673 100644
    const intl = useIntl();
    const {
      clearRowSelection: clearCategoryRowSelection,
-@@ -307,7 +310,7 @@ const CategoryDetails = ({ id, params }: CategoryDetailsProps) => {
+@@ -307,19 +314,46 @@ const CategoryDetails = ({ id, params }: CategoryDetailsProps) => {
          confirmButtonState={createCategoryOpts.status}
          disabled={createCategoryOpts.loading}
          errors={createCategoryOpts.data?.categoryCreate?.errors ?? []}
 -        onSubmit={async ({ name, description }) => {
+-          const result = await createCategory({
+-            variables: {
+-              parent: id,
+-              input: {
+-                name,
+-                ...(description
+-                  ? { description: getParsedDataForJsonStringField(description) }
+-                  : {}),
+-              },
+-            },
+-          });
 +        onSubmit={async ({ name, description, translations }) => {
-           const result = await createCategory({
-             variables: {
-               parent: id,
-@@ -320,6 +323,26 @@ const CategoryDetails = ({ id, params }: CategoryDetailsProps) => {
-             },
-           });
++          // PINSO：补充翻译时用英文名生成网址标识（如 /shop/jeans），被占用时依次加 -2、-3…
++          const result = await createWithSlug(
++            translations ? englishSlug(translations) : "",
++            slug =>
++              createCategory({
++                variables: {
++                  parent: id,
++                  input: {
++                    name,
++                    ...(slug ? { slug } : {}),
++                    ...(description
++                      ? { description: getParsedDataForJsonStringField(description) }
++                      : {}),
++                  },
++                },
++              }),
++            created => !!created.data?.categoryCreate?.errors.some(error => error.field === "slug"),
++          );
            const errors = getMutationErrors(result);
 +          const createdId = result.data?.categoryCreate?.category?.id;
 +
@@ -384,29 +450,56 @@ index db445e1..d146673 100644
            return Array.isArray(errors) ? (errors as ProductErrorFragment[]) : [];
          }}
 diff --git a/src/categories/views/CategoryList/CategoryList.tsx b/src/categories/views/CategoryList/CategoryList.tsx
-index 9cd787a..5cb2453 100644
+index 9cd787a..df52805 100644
 --- a/src/categories/views/CategoryList/CategoryList.tsx
 +++ b/src/categories/views/CategoryList/CategoryList.tsx
-@@ -36,6 +36,7 @@ import {
+@@ -36,6 +36,11 @@ import {
  } from "../../components/CategoryListPage/categoryListPageState";
  import { CreateCategoryDialog } from "../../components/CreateCategoryDialog/CreateCategoryDialog";
  import { messages as createCategoryMessages } from "../../components/CreateCategoryDialog/messages";
-+import { saveCategoryTranslations } from "../../components/CreateCategoryDialog/pinsoTranslations";
++import {
++  createWithSlug,
++  englishSlug,
++  saveCategoryTranslations,
++} from "../../components/CreateCategoryDialog/pinsoTranslations";
  import {
    categoryListUrl,
    type CategoryListUrlDialog,
-@@ -296,7 +297,7 @@ const CategoryList = ({ params }: CategoryListProps): React.ReactNode => {
+@@ -296,19 +301,46 @@ const CategoryList = ({ params }: CategoryListProps): React.ReactNode => {
          confirmButtonState={createCategoryOpts.status}
          disabled={createCategoryOpts.loading}
          errors={createCategoryOpts.data?.categoryCreate?.errors ?? []}
 -        onSubmit={async ({ name, description }) => {
+-          const result = await createCategory({
+-            variables: {
+-              parent: null,
+-              input: {
+-                name,
+-                ...(description
+-                  ? { description: getParsedDataForJsonStringField(description) }
+-                  : {}),
+-              },
+-            },
+-          });
 +        onSubmit={async ({ name, description, translations }) => {
-           const result = await createCategory({
-             variables: {
-               parent: null,
-@@ -309,6 +310,26 @@ const CategoryList = ({ params }: CategoryListProps): React.ReactNode => {
-             },
-           });
++          // PINSO：补充翻译时用英文名生成网址标识（如 /shop/jeans），被占用时依次加 -2、-3…
++          const result = await createWithSlug(
++            translations ? englishSlug(translations) : "",
++            slug =>
++              createCategory({
++                variables: {
++                  parent: null,
++                  input: {
++                    name,
++                    ...(slug ? { slug } : {}),
++                    ...(description
++                      ? { description: getParsedDataForJsonStringField(description) }
++                      : {}),
++                  },
++                },
++              }),
++            created => !!created.data?.categoryCreate?.errors.some(error => error.field === "slug"),
++          );
            const errors = getMutationErrors(result);
 +          const createdId = result.data?.categoryCreate?.category?.id;
 +
