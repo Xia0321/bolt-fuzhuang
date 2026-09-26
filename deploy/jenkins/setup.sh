@@ -106,7 +106,19 @@ systemctl restart jenkins
 for i in $(seq 1 60); do
   # 启动过程中连接会被拒绝，忽略错误继续等待
   code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/jenkins/login || true)"
-  [ "$code" = 200 ] && { echo "✓ Jenkins 已启动"; exit 0; }
+  if [ "$code" = 200 ]; then
+    echo "✓ Jenkins 已启动"
+    # 启动时由配置新建的任务可能没被加载（写入早于加载任务阶段），重新从磁盘加载一次
+    set -a; . /etc/jenkins/admin.env; set +a
+    auth="$JENKINS_ADMIN_USER:$JENKINS_ADMIN_PASSWORD"
+    cookie="$(mktemp)"
+    crumb="$(curl -s -c "$cookie" -u "$auth" http://127.0.0.1:8080/jenkins/crumbIssuer/api/json \
+      | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["crumbRequestField"]+":"+d["crumb"])')"
+    curl -s -o /dev/null -b "$cookie" -u "$auth" -H "$crumb" -X POST http://127.0.0.1:8080/jenkins/reload
+    rm -f "$cookie"
+    echo "✓ 已加载全部任务"
+    exit 0
+  fi
   sleep 5
 done
 echo "✗ Jenkins 未能启动"; journalctl -u jenkins -n 40 --no-pager; exit 1
