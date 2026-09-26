@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>商品导入</title>
+<style>
+  :root {
+    --text: #1f1f1f; --muted: #6b6b6b; --line: #e3e3e3; --bg: #ffffff; --soft: #f6f6f6;
+    --accent: #1f1f1f; --danger: #c62828; --ok: #2e7d32;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans", "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+  main { max-width: 960px; margin: 0 auto; padding: 24px 20px 64px; }
+  h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  section { border: 1px solid var(--line); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+  input[type=text], input[type=url], input[type=number], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font: inherit; color: inherit; background: #fff;
+  }
+  textarea { min-height: 140px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+  button.ghost { background: #fff; color: var(--text); border-color: var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .row > .grow { flex: 1; min-width: 220px; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+  .platforms { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  .platforms label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--text); font-size: 14px; cursor: pointer; }
+  .platforms input:checked + span { font-weight: 600; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+  .tabs button { background: none; color: var(--muted); border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+  .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+  .images label { position: relative; margin: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; aspect-ratio: 3/4; background: var(--soft); }
+  .images label.on { border-color: var(--accent); }
+  .images img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .images input { position: absolute; top: 6px; left: 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td input[type=color] { width: 40px; height: 32px; padding: 0; border: 1px solid var(--line); border-radius: 4px; }
+  .msg { padding: 10px 12px; border-radius: 6px; margin-bottom: 16px; }
+  .msg.error { background: #fdecea; color: var(--danger); }
+  .msg.ok { background: #edf7ed; color: var(--ok); }
+  .msg.warn { background: #fff8e1; color: #8a6d00; }
+  .muted { color: var(--muted); font-size: 12px; }
+  .hidden { display: none !important; }
+  .source { background: var(--soft); padding: 10px 12px; border-radius: 6px; white-space: pre-wrap; max-height: 160px; overflow: auto; font-size: 13px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; justify-content: flex-end; }
+  @media (max-width: 600px) { main { padding: 16px 12px 48px; } section { padding: 14px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>商品导入</h1>
+  <p class="sub">粘贴其他平台的商品链接，自动抓取信息并翻译为中、英、日三语。入库后为「未发布」状态，请在商品页检查后再发布。仅导入自有或已获授权的商品。</p>
+
+  <div id="msg" class="msg hidden"></div>
+  <div id="waiting" class="msg warn">正在连接后台…如果一直停留在这里，请从 Saleor 后台「商品目录 → 商品导入」打开本页。</div>
+
+  <section id="step1" class="hidden">
+    <h2>1. 商品链接</h2>
+    <div class="platforms">
+      <label><input type="radio" name="platform" value="shopify" checked /><span>Shopify 独立站</span></label>
+      <label><input type="radio" name="platform" value="generic" /><span>通用独立站</span></label>
+      <label><input type="radio" name="platform" value="amazon" /><span>亚马逊</span></label>
+    </div>
+    <div class="row">
+      <div class="grow"><input id="url" type="url" placeholder="https://..." /></div>
+      <button id="btnScrape">抓取并翻译</button>
+    </div>
+    <p class="muted" id="platformHint"></p>
+  </section>
+
+  <section id="step2" class="hidden">
+    <h2>2. 核对内容</h2>
+    <div id="warnings"></div>
+    <label>原文</label>
+    <div class="source" id="source"></div>
+    <div style="height:16px"></div>
+    <div class="tabs" id="langTabs">
+      <button data-lang="en" class="on">English</button>
+      <button data-lang="zh">中文</button>
+      <button data-lang="ja">日本語</button>
+    </div>
+    <div id="langPanels"></div>
+    <div class="row" style="margin-top:8px"><button class="ghost" id="btnRetranslate">重新翻译</button></div>
+
+    <h2 style="margin-top:24px">图片 <span class="muted" id="imageCount"></span></h2>
+    <div class="images" id="images"></div>
+
+    <h2 style="margin-top:24px">颜色</h2>
+    <table>
+      <thead><tr><th style="width:52px">色值</th><th>English</th><th>中文</th><th>日本語</th><th class="muted">原文</th><th style="width:40px"></th></tr></thead>
+      <tbody id="colors"></tbody>
+    </table>
+    <button class="ghost" id="btnAddColor" style="margin-top:8px">添加颜色</button>
+
+    <h2 style="margin-top:24px">尺码</h2>
+    <input id="sizes" type="text" placeholder="用逗号分隔，如 S, M, L, XL" />
+  </section>
+
+  <section id="step3" class="hidden">
+    <h2>3. 入库设置</h2>
+    <div class="grid2">
+      <div><label>商品类型</label><select id="productType"></select></div>
+      <div><label>分类 <span class="muted" id="categoryHint"></span></label><select id="category"></select></div>
+      <div><label>仓库</label><select id="warehouse"></select></div>
+      <div><label>每个规格的库存</label><input id="stock" type="number" min="0" value="10" /></div>
+    </div>
+    <h2 style="margin-top:20px">售价 <span class="muted" id="sourcePrice"></span></h2>
+    <div class="grid2" id="prices"></div>
+    <p class="muted">已按参考汇率换算，请按实际定价修改；留空的渠道不上架。</p>
+    <div class="actions" style="margin-top:16px">
+      <button id="btnImport">入库（未发布）</button>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const API = location.pathname.replace(/\/[^/]*$/, '') + '/api';
+  // 参考汇率（1 美元兑换），仅用于预填售价
+  const RATES = { USD: 1, CNY: 7.1, JPY: 150, EUR: 0.92, GBP: 0.78, CAD: 1.37, AUD: 1.52, SGD: 1.34, HKD: 7.8, KRW: 1380, TWD: 32 };
+  const HINTS = {
+    shopify: '链接形如 https://店铺域名/products/商品名，抓取最完整稳定。',
+    generic: '读取网页中的标准商品数据，适用于大多数独立站；尺码、颜色可能需要手动补充。',
+    amazon: '亚马逊反爬严格，可能被拦截，失败时请稍后重试。',
+  };
+  const $ = id => document.getElementById(id);
+  let token = '';
+  let options = null;
+  let scraped = null;
+  const state = { texts: { en: {}, zh: {}, ja: {} }, colors: [], images: [] };
+
+  // ---------- 与后台通信 ----------
+  window.addEventListener('message', e => {
+    if (e.source !== window.parent) return;
+    const { type, payload } = e.data || {};
+    if ((type === 'handshake' || type === 'tokenRefresh') && payload?.token) {
+      const first = !token;
+      token = payload.token;
+      if (first) init();
+    }
+  });
+
+  function redirect(to) {
+    window.parent.postMessage({ type: 'redirect', payload: { to, newContext: false, actionId: String(Date.now()) } }, '*');
+  }
+
+  async function api(path, body) {
+    const res = await fetch(API + path, {
+      method: body ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json', 'Authorization-Bearer': token },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `请求失败（HTTP ${res.status}）`);
+    return data;
+  }
+
+  function show(text, kind = 'error') {
+    const el = $('msg');
+    el.className = `msg ${kind}`;
+    el.textContent = text;
+    el.classList.toggle('hidden', !text);
+    if (text) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function busy(button, label, fn) {
+    const old = button.textContent;
+    button.disabled = true;
+    button.textContent = label;
+    try {
+      await fn();
+    } catch (err) {
+      show(err.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = old;
+    }
+  }
+
+  const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // ---------- 初始化 ----------
+  async function init() {
+    $('waiting').classList.add('hidden');
+    try {
+      options = await api('/options');
+    } catch (err) {
+      return show(err.message);
+    }
+    const fill = (id, items, label) => {
+      $(id).innerHTML = items.map(i => `<option value="${esc(i.id)}">${esc(label(i))}</option>`).join('');
+    };
+    fill('productType', options.productTypes, t => t.name);
+    fill('category', options.categories, c => (c.parent ? `${c.parent.name} / ` : '') + c.name);
+    fill('warehouse', options.warehouses, w => w.name);
+    $('step1').classList.remove('hidden');
+    updateHint();
+  }
+
+  function updateHint() {
+    $('platformHint').textContent = HINTS[document.querySelector('input[name=platform]:checked').value];
+  }
+  document.querySelectorAll('input[name=platform]').forEach(r => r.addEventListener('change', updateHint));
+
+  // ---------- 抓取与翻译 ----------
+  $('btnScrape').addEventListener('click', e => busy(e.target, '抓取中…', async () => {
+    show('');
+    const url = $('url').value.trim();
+    if (!url) throw new Error('请粘贴商品链接');
+    const platform = document.querySelector('input[name=platform]:checked').value;
+    scraped = await api('/scrape', { platform, url });
+    state.images = scraped.images.map(src => ({ src, on: true }));
+    $('sizes').value = scraped.sizes.join(', ');
+    $('source').textContent = `${scraped.name}\n\n${scraped.description}`;
+    $('warnings').innerHTML = (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
+    renderImages();
+    e.target.textContent = '翻译中…';
+    try {
+      await translate();
+    } catch (err) {
+      // 翻译失败时用原文预填三种语言，可手动修改后继续入库
+      for (const lang of ['en', 'zh', 'ja']) state.texts[lang] = { name: scraped.name, description: scraped.description };
+      state.colors = scraped.colors.map(c => ({ source: c, en: c, zh: c, ja: c, hex: '#cccccc' }));
+      renderTexts();
+      renderColors();
+      $('warnings').insertAdjacentHTML('beforeend', `<div class="msg warn">翻译失败：${esc(err.message)}。已用原文预填，请手动修改或点「重新翻译」。</div>`);
+    }
+    fillPrices();
+    $('step2').classList.remove('hidden');
+    $('step3').classList.remove('hidden');
+    $('step2').scrollIntoView({ behavior: 'smooth' });
+  }));
+
+  async function translate() {
+    const result = await api('/translate', { name: scraped.name, description: scraped.description, colors: scraped.colors });
+    for (const lang of ['en', 'zh', 'ja']) state.texts[lang] = result[lang];
+    state.colors = result.colors.map(c => ({ ...c, hex: /^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : '#cccccc' }));
+    if (result.categoryId && options.categories.some(c => c.id === result.categoryId)) {
+      $('category').value = result.categoryId;
+      $('categoryHint').textContent = '· 已按商品内容推荐，可修改';
+    }
+    renderTexts();
+    renderColors();
+  }
+
+  $('btnRetranslate').addEventListener('click', e => busy(e.target, '翻译中…', translate));
+
+  // ---------- 文案 ----------
+  let currentLang = 'en';
+  function renderTexts() {
+    $('langPanels').innerHTML = ['en', 'zh', 'ja'].map(lang => `
+      <div data-panel="${lang}" class="${lang === currentLang ? '' : 'hidden'}">
+        <label>名称</label>
+        <input type="text" data-field="name" data-lang="${lang}" value="${esc(state.texts[lang].name)}" />
+        <div style="height:10px"></div>
+        <label>描述（每行一段）</label>
+        <textarea data-field="description" data-lang="${lang}">${esc(state.texts[lang].description)}</textarea>
+      </div>`).join('');
+  }
+  $('langPanels').addEventListener('input', e => {
+    const { field, lang } = e.target.dataset;
+    if (field) state.texts[lang][field] = e.target.value;
+  });
+  $('langTabs').addEventListener('click', e => {
+    const lang = e.target.dataset.lang;
+    if (!lang) return;
+    currentLang = lang;
+    document.querySelectorAll('#langTabs button').forEach(b => b.classList.toggle('on', b.dataset.lang === lang));
+    document.querySelectorAll('[data-panel]').forEach(p => p.classList.toggle('hidden', p.dataset.panel !== lang));
+  });
+
+  // ---------- 图片 ----------
+  function renderImages() {
+    $('images').innerHTML = state.images.map((img, i) => `
+      <label class="${img.on ? 'on' : ''}"><input type="checkbox" data-i="${i}" ${img.on ? 'checked' : ''} />
+      <img src="${esc(img.src)}" alt="" loading="lazy" referrerpolicy="no-referrer" /></label>`).join('')
+      || '<p class="muted">没有抓到图片</p>';
+    $('imageCount').textContent = `已选 ${state.images.filter(i => i.on).length} / ${state.images.length}`;
+  }
+  $('images').addEventListener('change', e => {
+    const i = e.target.dataset.i;
+    if (i === undefined) return;
+    state.images[i].on = e.target.checked;
+    renderImages();
+  });
+
+  // ---------- 颜色 ----------
+  function renderColors() {
+    $('colors').innerHTML = state.colors.map((c, i) => `
+      <tr>
+        <td><input type="color" data-i="${i}" data-f="hex" value="${esc(c.hex)}" /></td>
+        <td><input type="text" data-i="${i}" data-f="en" value="${esc(c.en)}" /></td>
+        <td><input type="text" data-i="${i}" data-f="zh" value="${esc(c.zh)}" /></td>
+        <td><input type="text" data-i="${i}" data-f="ja" value="${esc(c.ja)}" /></td>
+        <td class="muted">${esc(c.source)}</td>
+        <td><button class="ghost" data-remove="${i}" title="删除">×</button></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="muted">没有抓到颜色，请点击「添加颜色」</td></tr>';
+  }
+  $('colors').addEventListener('input', e => {
+    const { i, f } = e.target.dataset;
+    if (f) state.colors[i][f] = e.target.value;
+  });
+  $('colors').addEventListener('click', e => {
+    const i = e.target.dataset.remove;
+    if (i === undefined) return;
+    state.colors.splice(Number(i), 1);
+    renderColors();
+  });
+  $('btnAddColor').addEventListener('click', () => {
+    state.colors.push({ source: '', en: '', zh: '', ja: '', hex: '#cccccc' });
+    renderColors();
+  });
+
+  // ---------- 售价 ----------
+  function convert(amount, from, to) {
+    if (!amount || !RATES[from] || !RATES[to]) return '';
+    const v = amount / RATES[from] * RATES[to];
+    if (to === 'JPY' || to === 'KRW') return String(Math.round(v / 10) * 10);
+    if (to === 'CNY' || to === 'TWD') return String(Math.round(v));
+    return v.toFixed(2);
+  }
+  function fillPrices() {
+    const p = scraped.price;
+    $('sourcePrice').textContent = p ? `原价 ${p.amount} ${p.currency || '（币种未知）'}` : '（未抓到原价）';
+    $('prices').innerHTML = options.channels.map(ch => `
+      <div><label>${esc(ch.name)}（${esc(ch.currencyCode)}）</label>
+      <input type="number" min="0" step="any" data-channel="${esc(ch.id)}" value="${p ? convert(p.amount, p.currency, ch.currencyCode) : ''}" /></div>`).join('');
+  }
+
+  // ---------- 入库 ----------
+  $('btnImport').addEventListener('click', e => busy(e.target, '入库中…', async () => {
+    show('');
+    for (const lang of ['en', 'zh', 'ja']) {
+      if (!state.texts[lang].name?.trim()) throw new Error('请填写三种语言的商品名称');
+    }
+    if (state.colors.some(c => !c.en.trim())) throw new Error('颜色的英文名称不能为空');
+    const prices = {};
+    document.querySelectorAll('[data-channel]').forEach(input => { if (Number(input.value) > 0) prices[input.dataset.channel] = Number(input.value); });
+    const result = await api('/import', {
+      productTypeId: $('productType').value,
+      categoryId: $('category').value,
+      warehouseId: $('warehouse').value,
+      stock: Number($('stock').value) || 0,
+      sourceUrl: scraped.sourceUrl,
+      texts: state.texts,
+      colors: state.colors.map(c => ({ en: c.en.trim(), zh: c.zh.trim(), ja: c.ja.trim(), hex: c.hex })),
+      sizes: $('sizes').value.split(/[,，、]/).map(s => s.trim()).filter(Boolean),
+      prices,
+      images: state.images.filter(i => i.on).map(i => i.src),
+    });
+    const extra = result.imageErrors?.length ? `，${result.imageErrors.length} 张图片下载失败` : '';
+    show(`已入库（未发布），共 ${result.variants} 个规格${extra}。正在打开商品页…`, 'ok');
+    setTimeout(() => redirect(`/products/${encodeURIComponent(result.id)}`), 1200);
+  }));
+})();
+</script>
+</body>
+</html>

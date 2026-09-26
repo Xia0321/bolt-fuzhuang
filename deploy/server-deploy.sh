@@ -57,6 +57,7 @@ step "更新文件"
 cp "$SRC/deploy/docker-compose.yml" "$REMOTE_DIR/"
 rsync -a --delete "$SRC/deploy/account-gw/" "$REMOTE_DIR/account-gw/"
 rsync -a --delete "$SRC/deploy/saleor/" "$REMOTE_DIR/saleor/"
+rsync -a --delete --exclude node_modules "$SRC/deploy/product-importer/" "$REMOTE_DIR/product-importer/"
 rsync -a --delete "$SRC/deploy/nginx/" "$REMOTE_DIR/nginx/"
 rsync -a --delete "$SRC/deploy/admin-panel/" "$REMOTE_DIR/www/admin-tools/"
 rsync -a --delete "$SRC/dist/" "$REMOTE_DIR/www/storefront/"
@@ -152,6 +153,7 @@ else
   set_env STOREFRONT_URL "http://$SERVER_IP"
 fi
 # 顾客注册需要 Turnstile 密钥和 Saleor App 令牌（见 README「顾客注册」），缺少时注册功能关闭
+grep -q "^ANTHROPIC_API_KEY=." .env || echo "提示：.env 中未配置 ANTHROPIC_API_KEY，后台商品导入无法翻译"
 for key in TURNSTILE_SITE_KEY TURNSTILE_SECRET SALEOR_APP_TOKEN; do
   grep -q "^$key=." .env || echo "提示：.env 中未配置 $key，顾客注册暂不可用"
 done
@@ -162,7 +164,7 @@ if docker volume inspect pinso_media >/dev/null 2>&1 && [ -z "$(ls -A media)" ];
 fi
 
 step "启动应用容器"
-docker compose -p pinso up -d --remove-orphans
+docker compose -p pinso up -d --build --remove-orphans
 # account-gw 以卷挂载运行，文件更新后需手动重启才能加载新代码
 docker compose -p pinso restart account-gw
 for i in $(seq 1 60); do
@@ -218,6 +220,19 @@ systemctl reload nginx
 HOOK
 chmod +x /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
 systemctl enable --now certbot.timer >/dev/null 2>&1
+
+step "安装后台扩展：商品导入"
+# 首次部署时从清单安装；已安装则跳过。安装后 Saleor 会把应用令牌回传给导入服务
+if [ -n "$DOMAIN" ]; then
+  saleor_shell() { docker compose -p pinso exec -T api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py '"$1"; }
+  if saleor_shell 'shell -c "from saleor.app.models import App; import sys; sys.exit(0 if App.objects.filter(identifier=\"pinso.product-importer\", is_installed=True).exists() else 1)"' >/dev/null 2>&1; then
+    echo "已安装，跳过"
+  else
+    saleor_shell "install_app https://$DOMAIN/importer/manifest --activate --quiet" && echo "✓ 已安装，后台「商品目录」菜单中出现「商品导入」" || echo "✗ 安装失败，可在后台「扩展」中手动安装：https://$DOMAIN/importer/manifest"
+  fi
+else
+  echo "未配置域名，跳过（扩展需要 HTTPS 地址）"
+fi
 
 step "验证服务"
 if [ -n "$DOMAIN" ]; then

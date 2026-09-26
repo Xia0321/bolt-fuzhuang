@@ -105,5 +105,25 @@ services:
       api:
         condition: service_healthy
 
+  # 商品导入：Saleor 后台扩展，从商品链接抓取并用 Claude 翻译后入库（代码见 deploy/product-importer）
+  product-importer:
+    build: ./product-importer
+    image: pinso-product-importer
+    restart: unless-stopped
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      PUBLIC_URL: ${STOREFRONT_URL:-}
+      SALEOR_API_URL: http://api:8000/graphql/
+      SALEOR_HOST: localhost
+    volumes:
+      # 保存安装时 Saleor 交给本应用的令牌
+      - importer-data:/data
+    ports:
+      - "127.0.0.1:8200:8200"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  importer-data:

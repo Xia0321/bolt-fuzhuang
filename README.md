@@ -123,6 +123,18 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 - Saleor 发信失败不会重试，只记录在 worker 日志中（`docker compose -p pinso logs worker`）
 - 注册确认邮件同一邮箱只在首次注册时发送；找回密码同一账号 15 分钟内只发一次
 
+## 后台扩展：商品导入
+
+后台「商品目录 → 商品导入」（代码 `deploy/product-importer`，Saleor 应用 + 后台扩展）：选择平台（Shopify 独立站 / 通用独立站 / 亚马逊）并粘贴商品链接，抓取名称、描述、价格、图片、尺码、颜色，由 Claude（`claude-opus-5`）翻译为英、中、日三语并推荐分类，核对修改后入库。入库内容：商品、颜色 × 尺码规格、图片、中日文翻译、各渠道价格、新颜色的色值与翻译，状态为**未发布**，来源链接记在商品私有元数据 `import_source_url`。
+
+- 服务器 `/opt/pinso/.env` 需要 `ANTHROPIC_API_KEY`（未配置时仍可抓取入库，只是不能自动翻译）
+- 首次部署时部署脚本会自动安装扩展（`manage.py install_app https://pinso.top/importer/manifest`），也可在后台「扩展」中用该清单地址手动安装
+- 只有具备「管理商品」权限的后台员工能使用；安装回调收到的令牌会先向 Saleor 验证属于本应用才启用
+- 亚马逊反爬严格，抓取可能失败；价格按参考汇率预填，请按实际定价修改
+- 仅导入自有或已获授权的商品，别人的图片和描述有版权
+
+本地开发：`cd deploy/product-importer && npm install && PORT=8200 DATA_DIR=./data SALEOR_API_URL=http://localhost:8000/graphql/ PUBLIC_URL=http://localhost:8200 ANTHROPIC_API_KEY=... node server.mjs`，再在本地后台「扩展」中用 `http://localhost:8200/importer/manifest` 安装（本地 Saleor 需设置 `HTTP_IP_FILTER_ALLOW_LOOPBACK_IPS=True` 才能回传令牌）。
+
 ## 部署
 
 ```

@@ -1,0 +1,12 @@
+{
+  "name": "pinso-product-importer",
+  "private": true,
+  "type": "module",
+  "description": "Saleor 后台扩展：从商品链接抓取并翻译为中英日三语后入库",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  }
+}
