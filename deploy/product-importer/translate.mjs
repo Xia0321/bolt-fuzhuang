@@ -74,7 +74,11 @@ function viaClaudeCode(input, format) {
   return runClaudeCode({ system: SYSTEM, input, schema: format });
 }
 
-async function viaApi(input, format) {
+function viaApi(input, format) {
+  return viaApiWith(SYSTEM, input, format);
+}
+
+async function viaApiWith(system, input, format) {
   apiClient ??= new Anthropic();
   const response = await apiClient.beta.messages.create({
     model: 'claude-opus-5',
@@ -86,7 +90,7 @@ async function viaApi(input, format) {
       effort: 'medium',
       format: { type: 'json_schema', schema: format },
     },
-    system: SYSTEM,
+    system,
     messages: [{
       role: 'user',
       content: input,
@@ -98,4 +102,26 @@ async function viaApi(input, format) {
   const text = response.content.find(b => b.type === 'text')?.text;
   if (!text) throw new Error('翻译结果为空');
   return JSON.parse(text);
+}
+
+// ---------- 后台表单字段翻译（如新建分类弹窗） ----------
+
+const FIELDS_SCHEMA = {
+  type: 'object',
+  properties: { en: localized, zh: localized, ja: localized },
+  required: ['en', 'zh', 'ja'],
+  additionalProperties: false,
+};
+
+const FIELDS_SYSTEM = `你是服装品牌 PINSO（品帅牛仔）独立站的编辑。你会收到后台表单中的名称和描述（原文可能是任何语言，描述可能为空），
+请给出英文（en）、简体中文（zh）、日文（ja）三个版本：
+- name：简洁准确，使用服装电商的常用叫法（如分类「牛仔裤」→ Jeans / 牛仔裤 / ジーンズ）
+- description：自然流畅的翻译，不增删事实；原文描述为空时返回空字符串；段落之间用换行分隔`;
+
+// 翻译后台表单中的名称与描述，返回 { en, zh, ja }，每项为 { name, description }
+export async function translateFields({ name, description }) {
+  const input = JSON.stringify({ name, description });
+  return translateBackend() === 'claude-code'
+    ? runClaudeCode({ system: FIELDS_SYSTEM, input, schema: FIELDS_SCHEMA, effort: 'low' })
+    : viaApiWith(FIELDS_SYSTEM, input, FIELDS_SCHEMA);
 }

@@ -13,6 +13,7 @@
 //   POST /api/scrape     { url, platform? }  平台默认自动识别
 //   POST /api/translate  { name, description, colors, suggestCategory }
 //   POST /api/import     见 saleor.mjs importProduct
+//   POST /api/translate-fields  { name, description } → { en, zh, ja }  后台表单（新建分类弹窗等）的字段翻译
 //   /api/* 需带请求头 Authorization-Bearer: <后台交给页面的员工凭证>
 //
 // 环境变量：
@@ -24,13 +25,14 @@
 //   SALEOR_API_URL      默认 http://api:8000/graphql/
 //   DATA_DIR            保存应用令牌的目录，默认 /data
 //   PORT                默认 8200
+//   CORS_ORIGINS        允许跨域调用的后台地址，逗号分隔（本地开发时后台在 http://localhost:9000；线上同域无需配置）
 
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
-import { translateBackend, translateProduct } from './translate.mjs';
+import { translateBackend, translateFields, translateProduct } from './translate.mjs';
 import { discoverStream } from './discover.mjs';
 import { gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
@@ -44,6 +46,7 @@ const DATA_DIR = env.DATA_DIR || '/data';
 const TOKEN_FILE = path.join(DATA_DIR, 'app-token.json');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = fs.readFileSync(path.join(HERE, 'public', 'index.html'), 'utf8');
+const CORS_ORIGINS = (env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const manifest = () => ({
   id: APP_ID,
@@ -113,6 +116,15 @@ function readBody(req, limit = 2_000_000) {
 
 const server = http.createServer(async (req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
+  // 本地开发时后台与导入服务不同源，按白名单允许跨域
+  const origin = req.headers.origin;
+  if (origin && CORS_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization-Bearer');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Vary', 'Origin');
+    if (req.method === 'OPTIONS') return res.end();
+  }
   if (!pathname.startsWith(BASE)) return send(res, 404, { error: 'NOT_FOUND' });
   const route = pathname.slice(BASE.length) || '/';
 
@@ -176,6 +188,12 @@ const server = http.createServer(async (req, res) => {
         categories: categories.map(c => ({ id: c.id, name: c.parent ? `${c.parent.name} / ${c.name}` : c.name })),
       });
       return send(res, 200, result);
+    }
+    if (req.method === 'POST' && route === '/api/translate-fields') {
+      if (!translateBackend()) return send(res, 503, { error: '服务器未配置 CLAUDE_CODE_OAUTH_TOKEN（订阅额度）或 ANTHROPIC_API_KEY，无法翻译' });
+      const name = String(input.name ?? '').trim();
+      if (!name) return send(res, 400, { error: '请先填写名称' });
+      return send(res, 200, await translateFields({ name, description: String(input.description ?? '') }));
     }
     if (req.method === 'POST' && route === '/api/import') {
       const result = await importProduct(input, appToken);

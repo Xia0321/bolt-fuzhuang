@@ -1,12 +1,16 @@
 # Saleor 后台中文语言包
 
 Saleor Dashboard 官方的简体中文只翻译了不到一成，且用词不统一（“下发”“变体”“产品”混用）。
-这里维护一份完整的中文翻译，**不修改 Saleor 源码**，打包后台前合并进去即可。
+这里维护一份完整的中文翻译，打包后台前合并进去即可。另有少量后台功能定制，以补丁形式维护。
 
 ```
 locale/zh-Hans.json   翻译文件：id → { context, source(英文原文), string(译文) }
 apply-locale.mjs      合并脚本：官方语言包 + 本翻译 → saleor-dashboard/locale/zh-Hans.json
+patches/*.patch       后台源码定制补丁（如新建分类时补充翻译）
+apply-patches.sh      应用补丁：已应用的跳过，无法干净应用时报错
 ```
+
+定制补丁中新增的界面文案直接以中文作为默认文案（id 以 `pinso` 开头），不需要写进 `locale/zh-Hans.json`。升级 Saleor Dashboard 版本后如补丁无法应用，需要在新版本源码上重新修改并重新生成补丁。
 
 ## 使用
 

@@ -62,6 +62,7 @@ DATABASE_URL=postgres://saleor:saleor@localhost:5432/saleor SECRET_KEY=dev .venv
 SALEOR_EMAIL=管理员邮箱 SALEOR_PASSWORD=管理员密码 node saleor/seed/seed.mjs
 
 # 3. 后台管理界面（仓库 saleor-dashboard 3.23.34，需要 Node 24 + pnpm 11）
+saleor/dashboard/apply-patches.sh ~/Desktop/saleor-dashboard       # 打上本项目的后台定制补丁
 node saleor/dashboard/apply-locale.mjs ~/Desktop/saleor-dashboard   # 合并中文语言包
 cd ~/Desktop/saleor-dashboard && pnpm install && pnpm dev   # http://localhost:9000
 
@@ -141,6 +142,12 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 - 仅导入自有或已获授权的商品，别人的图片和描述有版权
 
 本地开发：`cd deploy/product-importer && npm install && PORT=8200 DATA_DIR=./data SALEOR_API_URL=http://localhost:8000/graphql/ PUBLIC_URL=http://localhost:8200 ANTHROPIC_API_KEY=... node server.mjs`，再在本地后台「扩展」中用 `http://localhost:8200/importer/manifest` 安装（本地 Saleor 需设置 `HTTP_IP_FILTER_ALLOW_LOOPBACK_IPS=True` 才能回传令牌）。
+
+## 后台定制：新建分类时补充翻译
+
+后台「商品目录 → 分类 → 新建分类」（及分类详情页的「新建子分类」）弹窗中增加「补充其他语言翻译」，默认关闭。打开后调用商品导入服务的 `/importer/api/translate-fields`，由 Claude 把名称和描述翻译为英文、日文并填入弹窗（可修改），点「创建」后一并保存为该分类的 English、日本語 翻译。
+
+这是对 Saleor Dashboard 源码的改动，以补丁 `saleor/dashboard/patches/0001-category-create-translations.patch` 维护，`deploy/deploy.sh` 打包后台前自动应用。后台页面由本地打包上传（Jenkins 不打包后台），改动需执行 `deploy/deploy.sh` 才会上线。本地开发时后台（:9000）与导入服务（:8200）不同源：导入服务设置 `CORS_ORIGINS=http://localhost:9000`，并在后台页面的浏览器控制台执行 `localStorage.setItem("pinsoImporterUrl", "http://localhost:8200/importer")`。
 
 ## 部署
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// 把本仓库维护的后台中文翻译合并进 Saleor Dashboard 的语言包。
-// Saleor 源码不做任何修改，只在打包前生成 locale/zh-Hans.json。
+// 把本仓库维护的后台中文翻译合并进 Saleor Dashboard 的语言包，在打包前生成 locale/zh-Hans.json。
+// 后台源码的少量定制改动以补丁形式放在 patches/，由 apply-patches.sh 应用。
 //
 // 用法：
 //   node saleor/dashboard/apply-locale.mjs <saleor-dashboard 目录> [--check] [--report <文件>]

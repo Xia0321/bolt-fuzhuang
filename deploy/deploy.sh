@@ -29,7 +29,8 @@ cd "$ROOT"
 VITE_SALEOR_API_URL=/graphql/ npm run build
 
 if [ "${SKIP_DASHBOARD:-0}" != "1" ]; then
-  step "打包后台（合并中文语言包）"
+  step "打包后台（打补丁、合并中文语言包）"
+  "$ROOT/saleor/dashboard/apply-patches.sh" "$DASHBOARD_DIR"
   node "$ROOT/saleor/dashboard/apply-locale.mjs" "$DASHBOARD_DIR"
   # 后台需要 Node 24 + pnpm 11，打包约需 8GB 内存，因此在本地而不是服务器上打包
   (
