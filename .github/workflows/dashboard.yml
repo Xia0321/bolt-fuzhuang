@@ -1,0 +1,87 @@
+# 打包管理后台：Saleor Dashboard 源码 + 本仓库的定制补丁与中文语言包 → 发布到 GitHub Release「dashboard-latest」
+# Jenkins 任务「发布管理后台」下载这里的打包结果部署（服务器内存不足以打包后台）。
+# saleor/dashboard/ 有改动时自动运行，也可在 GitHub「Actions」页面手动运行。
+name: 打包管理后台
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - saleor/dashboard/**
+      - .github/workflows/dashboard.yml
+  workflow_dispatch:
+
+# 同时只打包一次，新的推送排队等候
+concurrency:
+  group: dashboard
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  # 与本地开发、线上 Saleor 版本对应的 Saleor Dashboard 3.23.34
+  DASHBOARD_REF: a6e7bee68ab183147ec680e03e86c29f717a11d5
+  PNPM: pnpm@11.13.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+        with:
+          path: pinso
+
+      - name: 拉取 Saleor Dashboard 源码
+        uses: actions/checkout@v4
+        with:
+          repository: saleor/saleor-dashboard
+          ref: ${{ env.DASHBOARD_REF }}
+          path: saleor-dashboard
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 安装依赖
+        working-directory: saleor-dashboard
+        env:
+          npm_config_trust_policy: "off"
+        run: npx -y "$PNPM" install --frozen-lockfile
+
+      - name: 打补丁、合并中文语言包
+        run: |
+          pinso/saleor/dashboard/apply-patches.sh saleor-dashboard
+          node pinso/saleor/dashboard/apply-locale.mjs saleor-dashboard
+
+      - name: 打包
+        working-directory: saleor-dashboard
+        env:
+          API_URL: /graphql/
+          APP_MOUNT_URI: /dashboard/
+          STATIC_URL: /dashboard/
+          LOCALE_CODE: ZH_HANS
+          NODE_OPTIONS: --max-old-space-size=12288
+        run: npx -y "$PNPM" build
+
+      - name: 发布打包结果
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out=saleor-dashboard/build/dashboard
+          test -f "$out/index.html"
+          # 记录对应的本仓库提交，Jenkins 据此判断打包结果是否已包含所需改动
+          printf 'commit=%s\nbuilt_at=%s\nsaleor_dashboard=%s\n' \
+            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$DASHBOARD_REF" > "$out/pinso-version.txt"
+          cp "$out/pinso-version.txt" .
+          tar -czf dashboard.tar.gz -C "$out" .
+          if ! gh release view dashboard-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create dashboard-latest -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+              --title "管理后台（自动打包）" \
+              --notes "由 .github/workflows/dashboard.yml 自动生成，供 Jenkins「发布管理后台」下载，请勿手动修改。"
+          fi
+          gh release upload dashboard-latest dashboard.tar.gz pinso-version.txt -R "$GITHUB_REPOSITORY" --clobber
+          echo "已发布：$(cat pinso-version.txt | tr '\n' ' ')"

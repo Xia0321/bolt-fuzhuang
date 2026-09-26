@@ -1,0 +1,112 @@
+// Jenkins 任务「发布管理后台」：下载 GitHub 打包好的 Saleor 后台 → 部署到本机
+// 后台打包需要约 8GB 内存，服务器不够，由 GitHub Actions（.github/workflows/dashboard.yml）打包后发布到
+// Release「dashboard-latest」，本任务只负责等待、下载、校验和替换后台页面。
+pipeline {
+    agent any
+
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 60, unit: 'MINUTES')
+    }
+
+    environment {
+        GITHUB_REPO = 'Xia0321/bolt-fuzhuang'
+        RELEASE_URL = "https://github.com/Xia0321/bolt-fuzhuang/releases/download/dashboard-latest"
+    }
+
+    stages {
+        stage('检查需要的后台版本') {
+            steps {
+                script {
+                    // 最近一次改动后台补丁或中文语言包的提交，打包结果必须包含它
+                    env.REQUIRED_COMMIT = sh(
+                        script: 'git log -1 --format=%H -- saleor/dashboard .github/workflows/dashboard.yml',
+                        returnStdout: true
+                    ).trim()
+                    echo "需要包含的提交：${env.REQUIRED_COMMIT.take(7)}（${sh(script: "git log -1 --format='%s' ${env.REQUIRED_COMMIT}", returnStdout: true).trim()}）"
+                }
+            }
+        }
+
+        stage('等待 GitHub 打包') {
+            steps {
+                sh '''#!/bin/bash
+                    set -uo pipefail
+                    started=$(date +%s)
+                    last_api=0
+                    while true; do
+                      built=$(curl -fsSL -m 20 "$RELEASE_URL/pinso-version.txt?t=$(date +%s)" 2>/dev/null | sed -n 's/^commit=//p')
+                      if [ -n "$built" ]; then
+                        # 打包结果的提交等于或晚于需要的提交即可（本地没有该提交说明它比本次拉取的代码更新）
+                        if [ "$built" = "$REQUIRED_COMMIT" ] || ! git cat-file -e "$built^{commit}" 2>/dev/null \
+                           || git merge-base --is-ancestor "$REQUIRED_COMMIT" "$built"; then
+                          echo "✓ GitHub 上的打包结果已包含所需改动（打包自提交 ${built:0:7}）"
+                          exit 0
+                        fi
+                      fi
+                      waited=$(( ($(date +%s) - started) / 60 ))
+                      # 每分钟查一次 GitHub 打包状态（未登录的接口每小时限 60 次）
+                      if [ $(( $(date +%s) - last_api )) -ge 60 ]; then
+                        last_api=$(date +%s)
+                        status=$(curl -fsSL -m 20 "https://api.github.com/repos/$GITHUB_REPO/actions/workflows/dashboard.yml/runs?per_page=5" 2>/dev/null \
+                          | python3 -c "
+import json, sys, os
+runs = json.load(sys.stdin).get('workflow_runs', [])
+need = os.environ['REQUIRED_COMMIT']
+run = next((r for r in runs if r['head_sha'] == need), None)
+if not run:
+    print('未找到对应的打包任务（GitHub 可能还没开始）|')
+else:
+    names = {'queued': '排队中', 'in_progress': '打包中', 'completed': '已结束'}
+    print(names.get(run['status'], run['status']) + '|' + (run['conclusion'] or '') + '|' + run['html_url'])
+" 2>/dev/null || echo '无法查询 GitHub 状态|')
+                        state=${status%%|*}
+                        rest=${status#*|}
+                        conclusion=${rest%%|*}
+                        url=${rest#*|}
+                        if [ "$conclusion" = failure ] || [ "$conclusion" = cancelled ]; then
+                          echo "✗ GitHub 打包失败（$conclusion），请查看：$url"
+                          exit 1
+                        fi
+                        echo "⏳ 已等待 ${waited} 分钟 · GitHub 状态：${state}${url:+ · $url}"
+                      fi
+                      if [ "$waited" -ge 45 ]; then
+                        echo "✗ 等待超过 45 分钟，请到 https://github.com/$GITHUB_REPO/actions 查看打包情况"
+                        exit 1
+                      fi
+                      sleep 30
+                    done
+                '''
+            }
+        }
+
+        stage('下载并校验') {
+            steps {
+                sh '''#!/bin/bash
+                    set -euo pipefail
+                    rm -rf dashboard-dist dashboard.tar.gz
+                    curl -fsSL -m 300 -o dashboard.tar.gz "$RELEASE_URL/dashboard.tar.gz?t=$(date +%s)"
+                    mkdir dashboard-dist
+                    tar -xzf dashboard.tar.gz -C dashboard-dist
+                    test -f dashboard-dist/index.html || { echo "✗ 打包结果缺少 index.html"; exit 1; }
+                    echo "✓ 已下载 $(du -sh dashboard.tar.gz | cut -f1)，共 $(find dashboard-dist -type f | wc -l) 个文件"
+                    sed 's/^/  /' dashboard-dist/pinso-version.txt
+                '''
+            }
+        }
+
+        stage('更新后台页面') {
+            steps {
+                // sudo 规则只允许以固定方式执行本工作区中的部署脚本；dashboard 阶段只替换后台页面并验证
+                sh 'sudo /bin/bash "$WORKSPACE/deploy/server-deploy.sh" "$WORKSPACE" dashboard'
+            }
+        }
+    }
+
+    post {
+        success {
+            echo '发布完成：https://pinso.top/dashboard/'
+        }
+    }
+}

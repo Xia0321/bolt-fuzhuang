@@ -147,7 +147,7 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 
 后台「商品目录 → 分类 → 新建分类」（及分类详情页的「新建子分类」）弹窗中增加「补充其他语言翻译」，默认关闭。打开后调用商品导入服务的 `/importer/api/translate-fields`，由 Claude 把名称和描述翻译为英文、日文并填入弹窗（可修改），点「创建」后一并保存为该分类的 English、日本語 翻译。
 
-这是对 Saleor Dashboard 源码的改动，以补丁 `saleor/dashboard/patches/0001-category-create-translations.patch` 维护，`deploy/deploy.sh` 打包后台前自动应用。后台页面由本地打包上传（Jenkins 不打包后台），改动需执行 `deploy/deploy.sh` 才会上线。本地开发时后台（:9000）与导入服务（:8200）不同源：导入服务设置 `CORS_ORIGINS=http://localhost:9000`，并在后台页面的浏览器控制台执行 `localStorage.setItem("pinsoImporterUrl", "http://localhost:8200/importer")`。
+这是对 Saleor Dashboard 源码的改动，以补丁 `saleor/dashboard/patches/0001-category-create-translations.patch` 维护，GitHub 打包后台（及本地 `deploy/deploy.sh`）前自动应用，通过 Jenkins「发布管理后台」上线。勾选翻译时分类网址标识使用英文名（如 `/shop/denim-jackets`），被占用时依次加 `-2`、`-3`。本地开发时后台（:9000）与导入服务（:8200）不同源：导入服务设置 `CORS_ORIGINS=http://localhost:9000`，并在后台页面的浏览器控制台执行 `localStorage.setItem("pinsoImporterUrl", "http://localhost:8200/importer")`。
 
 ## 部署
 
@@ -158,15 +158,22 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 Docker Compose：Saleor API、Worker、PostgreSQL、Redis（均不对公网开放）
 ```
 
-### 日常发布：Jenkins 一键部署
+### 日常发布：Jenkins
 
-打开 https://pinso.top/jenkins/ → 任务「PINSO 部署」→「立即构建」：拉取 GitHub `main` → 在 Node 容器中打包前台 → 执行 `deploy/server-deploy.sh` → 验证服务。
+打开 https://pinso.top/jenkins/ ，有两个任务，进入后点「立即构建」，任务页面按步骤显示进度、耗时和结果：
 
-- 流水线定义在 `deploy/Jenkinsfile`，Jenkins 的安装与配置在 `deploy/jenkins/`（`setup.sh` 可重复执行）
+| 任务 | 发布内容 | 步骤 |
+|---|---|---|
+| 发布商城前台 | 顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件） | 安装依赖 → 打包前台 → 检查运行环境 → 更新文件与配置 → 更新后端服务 → Nginx 与证书 → 邮件与后台扩展 → 验证 |
+| 发布管理后台 | Saleor 管理后台页面（`/dashboard/`） | 检查需要的后台版本 → 等待 GitHub 打包（显示已等待时间与状态）→ 下载并校验 → 更新后台页面 |
+
+- 管理后台打包需要约 8GB 内存，服务器不够，由 GitHub Actions（`.github/workflows/dashboard.yml`）在 `saleor/dashboard/` 有改动时自动打包，发布到 Release `dashboard-latest`；「发布管理后台」等 GitHub 打包出包含最新改动的版本后再下载部署
+- 流水线定义在 `deploy/Jenkinsfile`（商城前台）与 `deploy/Jenkinsfile.dashboard`（管理后台），每个步骤调用 `deploy/server-deploy.sh` 的一个阶段
+- Jenkins 的安装与配置在 `deploy/jenkins/`（`setup.sh` 可重复执行；新增或修改任务、权限后需在服务器上重新执行）
 - Jenkins 以 systemd 服务运行，只监听 127.0.0.1:8080，内存上限 512MB；管理员密码在服务器 `/etc/jenkins/admin.env`
-- 后台管理页面打包需要约 8GB 内存，Jenkins 不打包后台；后台有改动时用下方的本地部署
+- 仓库改为私有后，Jenkins 下载后台打包结果需要 GitHub 令牌
 
-### 本地部署（首次部署、或需要更新后台页面时）
+### 本地部署（首次部署，或不经 Jenkins 一次性发布全部内容）
 
 ```bash
 # 本地打包前台和后台 → 上传 → 启动 → 配置 Nginx 与证书（首次会自动申请 Let's Encrypt 证书）

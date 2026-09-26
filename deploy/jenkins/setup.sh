@@ -2,7 +2,7 @@
 # 在服务器上安装 Jenkins（一次性，root 执行，可重复运行）
 #
 #   - Jenkins 以 systemd 服务运行，只监听 127.0.0.1:8080，由 Nginx 在 https://<域名>/jenkins/ 反向代理
-#   - 跳过安装向导，通过 Configuration as Code 自动创建管理员账号和“PINSO 部署”任务
+#   - 跳过安装向导，通过 Configuration as Code 自动创建管理员账号和「发布商城前台」「发布管理后台」两个任务
 #   - jenkins 用户加入 docker 组（在容器中打包前台），并通过 sudo 规则只允许执行部署脚本
 #
 # 用法：bash setup.sh <域名>
@@ -14,6 +14,7 @@ JENKINS_VERSION="${JENKINS_VERSION:-2.568.3}"
 PLUGIN_MANAGER_VERSION="${PLUGIN_MANAGER_VERSION:-2.15.0}"
 REPO_URL="${REPO_URL:-https://github.com/Xia0321/bolt-fuzhuang.git}"
 JOB_NAME=pinso-deploy
+DASHBOARD_JOB_NAME=pinso-dashboard
 JENKINS_HOME=/var/lib/jenkins
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
@@ -62,13 +63,16 @@ fi
 chown root:jenkins /etc/jenkins/admin.env
 chmod 640 /etc/jenkins/admin.env
 sed -e "s|__DOMAIN__|$DOMAIN|g" -e "s|__REPO_URL__|$REPO_URL|g" -e "s|__JOB_NAME__|$JOB_NAME|g" \
+  -e "s|__DASHBOARD_JOB_NAME__|$DASHBOARD_JOB_NAME|g" \
   "$HERE/casc.yaml" > "$JENKINS_HOME/casc.yaml"
 chown jenkins:jenkins "$JENKINS_HOME/casc.yaml"
 
-# 部署需要 root：只允许以固定参数执行本任务工作区中的部署脚本
+# 部署需要 root：只允许执行两个任务各自工作区中的部署脚本，第二个参数为阶段名（脚本内只接受已知阶段）
 workspace="$JENKINS_HOME/workspace/$JOB_NAME"
+dashboard_workspace="$JENKINS_HOME/workspace/$DASHBOARD_JOB_NAME"
 cat > /etc/sudoers.d/jenkins-pinso <<EOF
-jenkins ALL=(root) NOPASSWD: /bin/bash $workspace/deploy/server-deploy.sh $workspace
+jenkins ALL=(root) NOPASSWD: /bin/bash $workspace/deploy/server-deploy.sh $workspace, /bin/bash $workspace/deploy/server-deploy.sh $workspace *
+jenkins ALL=(root) NOPASSWD: /bin/bash $dashboard_workspace/deploy/server-deploy.sh $dashboard_workspace dashboard
 EOF
 chmod 440 /etc/sudoers.d/jenkins-pinso
 visudo -cqf /etc/sudoers.d/jenkins-pinso

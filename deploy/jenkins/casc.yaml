@@ -1,7 +1,7 @@
 # Jenkins Configuration as Code，由 setup.sh 替换 __DOMAIN__ 等占位符后写入 /var/lib/jenkins/casc.yaml
 # 每次 Jenkins 启动都会按此文件重新应用配置，在界面上修改的同类设置会被覆盖
 jenkins:
-  systemMessage: "PINSO Denim 部署。点击任务「PINSO 部署」→「立即构建」即可发布 GitHub main 分支的最新代码。"
+  systemMessage: "PINSO Denim 发布：「发布商城前台」更新网站与后端服务，「发布管理后台」更新 Saleor 后台页面。进入任务后点「立即构建」，发布 GitHub main 分支的最新代码。"
   numExecutors: 1
   mode: NORMAL
   securityRealm:
@@ -27,8 +27,8 @@ unclassified:
 jobs:
   - script: |
       pipelineJob('__JOB_NAME__') {
-        displayName('PINSO 部署')
-        description('拉取 GitHub main 分支 → 打包前台 → 部署到 https://__DOMAIN__/')
+        displayName('发布商城前台')
+        description('顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件）。拉取 GitHub main → 打包前台 → 分步部署到 https://__DOMAIN__/')
         definition {
           cpsScm {
             scm {
@@ -38,6 +38,23 @@ jobs:
               }
             }
             scriptPath('deploy/Jenkinsfile')
+            lightweight(true)
+          }
+        }
+      }
+  - script: |
+      pipelineJob('__DASHBOARD_JOB_NAME__') {
+        displayName('发布管理后台')
+        description('Saleor 管理后台页面（https://__DOMAIN__/dashboard/）。等待 GitHub 打包完成 → 下载校验 → 替换后台页面')
+        definition {
+          cpsScm {
+            scm {
+              git {
+                remote { url('__REPO_URL__') }
+                branch('*/main')
+              }
+            }
+            scriptPath('deploy/Jenkinsfile.dashboard')
             lightweight(true)
           }
         }
