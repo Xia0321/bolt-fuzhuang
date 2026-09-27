@@ -297,7 +297,7 @@
           <div class="muted">${esc(p.note)}</div>
           <div class="link">${esc(p.url)}</div>
           <div class="btns">
-            <a class="primary" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">打开挑选</a>
+            <a class="primary" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer" data-open="${i}">打开挑选</a>
             <button class="ghost" data-copy="${i}">复制</button>
           </div>
         </div>
@@ -380,6 +380,13 @@
   }
 
   $('finds').addEventListener('click', async e => {
+    // 打开挑选：嵌在后台里时交给后台在新标签页打开，避免在当前窗口跳走
+    const open = e.target.dataset.open;
+    if (open !== undefined && window.parent !== window) {
+      e.preventDefault();
+      window.parent.postMessage({ type: 'redirect', payload: { to: foundUrls[open], newContext: true, actionId: String(Date.now()) } }, '*');
+      return;
+    }
     const copy = e.target.dataset.copy;
     if (copy === undefined) return;
     const url = foundUrls[copy];
