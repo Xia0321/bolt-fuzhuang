@@ -285,9 +285,14 @@ export async function loadStore(channel: string, languageCode: string): Promise<
   const navbar = mapMenu(data.navbar);
   const products = data.products.edges.map(e => mapProduct(e.node));
   // 只展示当前渠道下有商品的分类（Saleor 自带的 default-category 等空分类不显示）
+  // 分类没有单独配背景图时（如导入商品时自动建的分类），用该分类下第一件有图商品的主图
   const allCategories = data.categories.edges
     .map(e => mapCategory(e.node))
-    .filter(c => products.some(p => p.categoryId === c.id));
+    .filter(c => products.some(p => p.categoryId === c.id))
+    .map(c => c.imageUrl ? c : {
+      ...c,
+      imageUrl: products.find(p => p.categoryId === c.id && p.images.length)?.images[0] ?? null,
+    });
   // 分类的展示顺序跟随后台的 navbar 菜单；菜单里没有的分类排在后面
   const menuOrder = navbar.filter(l => l.category).map(l => l.category!.slug);
   const categories = [...allCategories].sort((a, b) => {
