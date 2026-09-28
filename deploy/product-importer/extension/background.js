@@ -1,6 +1,9 @@
 // 点插件图标：在当前商品页取出页面 HTML（精简 + gzip），存到插件存储，再打开后台的商品导入页；
 // 导入页里的内容脚本（importer.js）把它转交给页面，页面带着它调用 /api/scrape，服务器不用再去请求对方网站。
 const SITE = 'https://pinso.top';
+// 后台里「商品目录 → 商品导入」的地址（QXBwOjI= 是导入应用在 Saleor 中的 ID）。
+// 重新安装导入应用后 ID 会变：打开一次新的导入页，importer.js 会记下新地址并优先使用
+const IMPORTER_PAGE = `${SITE}/dashboard/extensions/app/${encodeURIComponent('QXBwOjI=')}`;
 
 chrome.action.onClicked.addListener(async tab => {
   try {
@@ -34,18 +37,15 @@ async function capturePage() {
 
 // 已打开的商品导入页直接切过去（页面会自动开始抓取）；没打开过则新开
 async function openImporter() {
-  const { importerPage } = await chrome.storage.local.get('importerPage');
-  if (importerPage) {
-    const path = url => url.split(/[?#]/)[0];
-    const open = (await chrome.tabs.query({ url: `${SITE}/dashboard/*` })).find(t => t.url && path(t.url) === path(importerPage));
-    if (open) {
-      await chrome.tabs.update(open.id, { active: true });
-      await chrome.windows.update(open.windowId, { focused: true });
-      return;
-    }
+  const { importerPage = IMPORTER_PAGE } = await chrome.storage.local.get('importerPage');
+  const path = url => url.split(/[?#]/)[0];
+  const open = (await chrome.tabs.query({ url: `${SITE}/dashboard/*` })).find(t => t.url && path(t.url) === path(importerPage));
+  if (open) {
+    await chrome.tabs.update(open.id, { active: true });
+    await chrome.windows.update(open.windowId, { focused: true });
+    return;
   }
-  // 还不知道导入页地址时打开后台，从「商品目录 → 商品导入」进入后同样会自动开始抓取
-  await chrome.tabs.create({ url: importerPage || `${SITE}/dashboard/` });
+  await chrome.tabs.create({ url: importerPage });
 }
 
 // 在商品页右上角显示几秒提示

@@ -1,7 +1,7 @@
 // 运行在后台的商品导入页（/importer/，嵌在后台页面中）：把插件采集到的商品页转交给页面。
 // 页面收到后回复 capture-received，此时才从插件存储中删除，避免页面还没加载好时丢失。
 
-// 记住商品导入页在后台中的地址，下次采集后直接打开这里
+// 记下商品导入页在后台中的实际地址（重新安装导入应用后 ID 会变，以实际打开过的为准）
 try {
   if (window.top !== window) chrome.storage.local.set({ importerPage: window.top.location.href });
 } catch {
