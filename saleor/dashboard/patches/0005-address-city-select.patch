@@ -1,0 +1,307 @@
+diff --git a/src/components/AddressEdit/AddressEdit.tsx b/src/components/AddressEdit/AddressEdit.tsx
+index f127cb8..dff8d55 100644
+--- a/src/components/AddressEdit/AddressEdit.tsx
++++ b/src/components/AddressEdit/AddressEdit.tsx
+@@ -8,6 +8,7 @@ import { type ChangeEvent } from "react";
+ import { useIntl } from "react-intl";
+ 
+ import { getErrorMessage } from "./getErrorMessage";
++import { PinsoCityField } from "./PinsoCityField";
+ import { useAddressValidation } from "./useAddressValidation";
+ 
+ interface AddressEditProps {
+@@ -151,7 +152,10 @@ export const AddressEdit = (props: AddressEditProps) => {
+       />
+       <Box display="grid" gap={2} __gridTemplateColumns="1fr 1fr">
+         <div>
+-          <Input
++          <PinsoCityField
++            country={data.country}
++            countryArea={data.countryArea}
++            value={data.city}
+             disabled={disabled}
+             data-test-id="city-input"
+             error={!!formErrors.city}
+@@ -160,13 +164,30 @@ export const AddressEdit = (props: AddressEditProps) => {
+               id: "TE4fIS",
+               defaultMessage: "City",
+             })}
+-            name="city"
+-            onChange={onChange}
+-            value={data.city}
+-            width="100%"
+-            spellCheck={false}
+-            autoComplete="new-password"
+-          />
++            onChange={value =>
++              onChange({
++                target: { name: "city", value },
++                // must cast, we use fake event because Combobox doesn't expose inner event, and upper handlers require it
++              } as ChangeEvent<any>)
++            }
++          >
++            <Input
++              disabled={disabled}
++              data-test-id="city-input"
++              error={!!formErrors.city}
++              helperText={getErrorMessage(formErrors.city, intl)}
++              label={intl.formatMessage({
++                id: "TE4fIS",
++                defaultMessage: "City",
++              })}
++              name="city"
++              onChange={onChange}
++              value={data.city}
++              width="100%"
++              spellCheck={false}
++              autoComplete="new-password"
++            />
++          </PinsoCityField>
+         </div>
+         <div>
+           <Input
+diff --git a/src/components/AddressEdit/PinsoCityField.test.tsx b/src/components/AddressEdit/PinsoCityField.test.tsx
+new file mode 100644
+index 0000000..751f203
+--- /dev/null
++++ b/src/components/AddressEdit/PinsoCityField.test.tsx
+@@ -0,0 +1,96 @@
++import { gql } from "@apollo/client";
++import { MockedProvider, type MockedResponse } from "@apollo/client/testing";
++import { ThemeProvider } from "@saleor/macaw-ui-next";
++import { render, screen, waitFor } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++
++import { PinsoCityField } from "./PinsoCityField";
++
++// Radix primitives used by macaw-ui need ResizeObserver, which jsdom lacks.
++global.ResizeObserver = jest.fn().mockImplementation(() => ({
++  observe: jest.fn(),
++  unobserve: jest.fn(),
++  disconnect: jest.fn(),
++}));
++
++const query = gql`
++  query PinsoAddressCityChoices($countryCode: CountryCode!, $countryArea: String) {
++    addressValidationRules(countryCode: $countryCode, countryArea: $countryArea) {
++      cityChoices {
++        raw
++        verbose
++      }
++    }
++  }
++`;
++
++const cityChoices = (countryCode: string, countryArea: string, choices: string[][]): MockedResponse => ({
++  request: { query, variables: { countryCode, countryArea } },
++  result: {
++    data: {
++      addressValidationRules: {
++        __typename: "AddressValidationData",
++        cityChoices: choices.map(([raw, verbose]) => ({ __typename: "ChoiceValue", raw, verbose })),
++      },
++    },
++  },
++});
++
++const mocks = [
++  cityChoices("CN", "上海市", [
++    ["浦东新区", "Pudong Xinqu"],
++    ["浦东新区", "浦东新区"],
++    ["黄浦区", "Huangpu Qu"],
++    ["黄浦区", "黄浦区"],
++  ]),
++  cityChoices("US", "CA", []),
++];
++
++const setup = (country: string, countryArea: string, onChange = jest.fn()) =>
++  render(
++    <MockedProvider mocks={mocks} addTypename>
++      <ThemeProvider>
++        <PinsoCityField
++          country={country}
++          countryArea={countryArea}
++          value=""
++          label="City"
++          data-test-id="city-input"
++          onChange={onChange}
++        >
++          <input data-test-id="city-text-input" aria-label="手填城市" />
++        </PinsoCityField>
++      </ThemeProvider>
++    </MockedProvider>,
++  );
++
++describe("PinsoCityField（PINSO：有城市列表时下拉选择城市）", () => {
++  it("没选省份：显示原来的输入框", () => {
++    setup("CN", "");
++
++    expect(screen.getByLabelText("手填城市")).toBeInTheDocument();
++  });
++
++  it("选了有城市列表的省份：改为下拉，选中后回传所选城市", async () => {
++    const onChange = jest.fn();
++
++    setup("CN", "上海市", onChange);
++
++    const combobox = await screen.findByRole("combobox");
++
++    expect(screen.queryByLabelText("手填城市")).not.toBeInTheDocument();
++
++    await userEvent.click(combobox);
++    await userEvent.click(await screen.findByText("浦东新区"));
++
++    expect(onChange).toHaveBeenCalledWith("浦东新区");
++  });
++
++  it("地区没有城市列表（如美国的州）：仍显示原来的输入框", async () => {
++    setup("US", "CA");
++
++    await waitFor(() => expect(screen.getByLabelText("手填城市")).toBeInTheDocument());
++    await new Promise(resolve => setTimeout(resolve, 50));
++    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
++  });
++});
+diff --git a/src/components/AddressEdit/PinsoCityField.tsx b/src/components/AddressEdit/PinsoCityField.tsx
+new file mode 100644
+index 0000000..83de465
+--- /dev/null
++++ b/src/components/AddressEdit/PinsoCityField.tsx
+@@ -0,0 +1,78 @@
++// PINSO：地址表单的城市字段。选了省份后，地址库里有该省的城市列表（如中国、日本）时改为下拉选择，
++// 避免手填的城市名通不过 Saleor 的地址校验；没有城市列表时（如美国）仍显示原来的输入框（children）。
++// 选项与省份下拉一致，列出地址库返回的全部写法（如 浦东新区 / Pudong Xinqu），两种写法都能通过校验。
++import { gql, useQuery } from "@apollo/client";
++import { CountryCode } from "@dashboard/graphql";
++import { Combobox } from "@saleor/macaw-ui-next";
++import { type ReactNode } from "react";
++
++const cityChoicesQuery = gql`
++  query PinsoAddressCityChoices($countryCode: CountryCode!, $countryArea: String) {
++    addressValidationRules(countryCode: $countryCode, countryArea: $countryArea) {
++      cityChoices {
++        raw
++        verbose
++      }
++    }
++  }
++`;
++
++interface CityChoicesData {
++  addressValidationRules: { cityChoices: Array<{ raw: string; verbose: string }> } | null;
++}
++
++interface PinsoCityFieldProps {
++  country: string | undefined;
++  countryArea: string | undefined;
++  value: string | undefined;
++  disabled?: boolean;
++  error?: boolean;
++  helperText?: string;
++  label: string;
++  "data-test-id"?: string;
++  onChange: (value: string) => void;
++  children: ReactNode;
++}
++
++export const PinsoCityField = ({
++  country,
++  countryArea,
++  value,
++  disabled,
++  error,
++  helperText,
++  label,
++  "data-test-id": dataTestId,
++  onChange,
++  children,
++}: PinsoCityFieldProps): JSX.Element => {
++  const countryCode = country ? CountryCode[country as keyof typeof CountryCode] : undefined;
++  const { data } = useQuery<CityChoicesData>(cityChoicesQuery, {
++    variables: { countryCode, countryArea },
++    skip: !countryCode || !countryArea,
++  });
++  const options = (data?.addressValidationRules?.cityChoices ?? []).map(choice => ({
++    label: choice.verbose,
++    value: choice.verbose,
++  }));
++
++  if (!countryArea || !options.length) {
++    return <>{children}</>;
++  }
++
++  return (
++    <Combobox
++      data-test-id={dataTestId}
++      autoComplete="off"
++      spellCheck={false}
++      disabled={disabled}
++      error={error}
++      helperText={helperText}
++      label={label}
++      options={options}
++      name="city"
++      value={{ label: value ?? "", value: value ?? "" }}
++      onChange={option => onChange(option?.value ?? "")}
++    />
++  );
++};
+diff --git a/src/components/CompanyAddressInput/CompanyAddressForm.tsx b/src/components/CompanyAddressInput/CompanyAddressForm.tsx
+index 466fb5f..19bfcef 100644
+--- a/src/components/CompanyAddressInput/CompanyAddressForm.tsx
++++ b/src/components/CompanyAddressInput/CompanyAddressForm.tsx
+@@ -16,6 +16,7 @@ import { makeStyles } from "@saleor/macaw-ui";
+ import { Combobox, Input, type Option } from "@saleor/macaw-ui-next";
+ import { type IntlShape, useIntl } from "react-intl";
+ 
++import { PinsoCityField } from "../AddressEdit/PinsoCityField";
+ import { useAddressValidation } from "../AddressEdit/useAddressValidation";
+ 
+ export interface CompanyAddressFormProps {
+@@ -121,22 +122,37 @@ export const CompanyAddressForm = (props: CompanyAddressFormProps) => {
+       />
+       <FormSpacer />
+       <Grid>
+-        <Input
++        <PinsoCityField
++          country={data.country}
++          countryArea={data.countryArea}
++          value={data.city}
+           disabled={disabled}
+-          error={!!formErrors.city}
+-          aria-invalid={!!formErrors.city}
+           data-test-id="company-city-input"
++          error={!!formErrors.city}
+           helperText={getErrorMessage(formErrors.city, intl)}
+           label={intl.formatMessage({
+             id: "TE4fIS",
+             defaultMessage: "City",
+           })}
+-          name={"city" as keyof AddressTypeInput}
+-          onChange={onChange}
+-          value={data.city}
+-          autoComplete="address-level2"
+-          spellCheck={false}
+-        />
++          onChange={value => onChange({ target: { name: "city", value } })}
++        >
++          <Input
++            disabled={disabled}
++            error={!!formErrors.city}
++            aria-invalid={!!formErrors.city}
++            data-test-id="company-city-input"
++            helperText={getErrorMessage(formErrors.city, intl)}
++            label={intl.formatMessage({
++              id: "TE4fIS",
++              defaultMessage: "City",
++            })}
++            name={"city" as keyof AddressTypeInput}
++            onChange={onChange}
++            value={data.city}
++            autoComplete="address-level2"
++            spellCheck={false}
++          />
++        </PinsoCityField>
+         <Input
+           disabled={disabled}
+           error={!!formErrors.postalCode}
