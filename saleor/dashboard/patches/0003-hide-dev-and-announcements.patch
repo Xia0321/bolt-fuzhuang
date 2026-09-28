@@ -1,0 +1,70 @@
+diff --git a/src/components/Sidebar/Sidebar.test.tsx b/src/components/Sidebar/Sidebar.test.tsx
+index 8b9af0d..fc1db76 100644
+--- a/src/components/Sidebar/Sidebar.test.tsx
++++ b/src/components/Sidebar/Sidebar.test.tsx
+@@ -1,5 +1,4 @@
+ import { useCloud } from "@dashboard/auth/hooks/useCloud";
+-import { useDevModeContext } from "@dashboard/components/DevModePanel/hooks";
+ import { useNavigatorSearchContext } from "@dashboard/components/NavigatorSearch/useNavigatorSearchContext";
+ import { ThemeProvider as LegacyThemeProvider } from "@saleor/macaw-ui";
+ import { ThemeProvider } from "@saleor/macaw-ui-next";
+@@ -85,30 +84,13 @@ describe("Sidebar", () => {
+     // Assert
+     expect(screen.queryByTestId("cloud-environment-link")).not.toBeInTheDocument();
+   });
+-  it("should render keyboard shortcuts", () => {
++  // PINSO：侧边栏只保留「命令菜单」，隐藏「调试台」和「新功能」
++  it("should render only the command menu shortcut", () => {
+     // Arrange & Act
+     render(<Sidebar />, { wrapper: Wrapper });
+     // Assert
+     expect(screen.getByText("Command menu")).toBeInTheDocument();
+-    expect(screen.getByText("Playground")).toBeInTheDocument();
+-  });
+-  it("should call callback when click on playground shortcut", async () => {
+-    // Arrange
+-    const actionCallback = jest.fn();
+-
+-    (useDevModeContext as jest.Mock).mockImplementationOnce(() => ({
+-      variables: "",
+-      setVariables: jest.fn(),
+-      isDevModeVisible: false,
+-      setDevModeVisibility: actionCallback,
+-      devModeContent: "",
+-      setDevModeContent: jest.fn(),
+-    }));
+-    render(<Sidebar />, { wrapper: Wrapper });
+-    // Act
+-    await userEvent.click(screen.getByText("Playground"));
+-    // Assert
+-    expect(actionCallback).toHaveBeenCalledWith(true);
++    expect(screen.queryByText("Playground")).not.toBeInTheDocument();
+   });
+   it("should call callback when click on search shortcut", async () => {
+     // Arrange
+diff --git a/src/components/Sidebar/shortcuts/useShortcuts.tsx b/src/components/Sidebar/shortcuts/useShortcuts.tsx
+index d794a45..8235898 100644
+--- a/src/components/Sidebar/shortcuts/useShortcuts.tsx
++++ b/src/components/Sidebar/shortcuts/useShortcuts.tsx
+@@ -63,5 +63,6 @@ export const useShortcuts = (): Shortcut[] => {
+     [intl],
+   );
+ 
+-  return shortcuts;
++  // PINSO：侧边栏只保留「命令菜单」。「调试台」（GraphQL 调试，快捷键仍可打开）和「新功能」（Saleor 更新公告）运营用不到
++  return shortcuts.filter(shortcut => shortcut.id === "search");
+ };
+diff --git a/src/ripples/hooks/useRipplesStorage.ts b/src/ripples/hooks/useRipplesStorage.ts
+index a299892..3f926dd 100644
+--- a/src/ripples/hooks/useRipplesStorage.ts
++++ b/src/ripples/hooks/useRipplesStorage.ts
+@@ -100,7 +100,8 @@ export const useRippleStorage = () => {
+     (ripple: Ripple) => storage.setFirstSeenFlag(ripple),
+     [storage],
+   );
+-  const getShouldShow = useCallback((ripple: Ripple) => storage.getShouldShow(ripple), [storage]);
++  // PINSO：不显示 Saleor 的新功能提示（菜单旁的紫色圆点、角落公告），均为英文且运营用不到
++  const getShouldShow = useCallback((_ripple: Ripple): boolean => false, []);
+   const setManuallyHidden = useCallback(
+     (ripple: Ripple) => storage.setManuallyHidden(ripple),
+     [storage],
