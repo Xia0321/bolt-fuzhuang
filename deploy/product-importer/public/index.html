@@ -35,10 +35,21 @@
   .tabs button { background: none; color: var(--muted); border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 6px 12px; }
   .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
   .images { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
-  .images label { position: relative; margin: 0; border: 2px solid transparent; border-radius: 6px; overflow: hidden; cursor: pointer; aspect-ratio: 3/4; background: var(--soft); }
-  .images label.on { border-color: var(--accent); }
-  .images img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .images input { position: absolute; top: 6px; left: 6px; }
+  .images .tile { position: relative; border: 2px solid transparent; border-radius: 6px; overflow: hidden; aspect-ratio: 3/4; background: var(--soft); }
+  .images .tile.on { border-color: var(--accent); }
+  .images .tile:not(.on) img { opacity: .45; }
+  .images img { width: 100%; height: 100%; object-fit: cover; display: block; cursor: zoom-in; }
+  /* 勾选框点击区域放大到左上角一块，方便点中 */
+  .images .pick { position: absolute; top: 0; left: 0; margin: 0; padding: 6px; line-height: 0; cursor: pointer; }
+  .viewer { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.85); display: flex; align-items: center; justify-content: center; }
+  .viewer img { max-width: calc(100vw - 140px); max-height: calc(100vh - 110px); object-fit: contain; background: #fff; }
+  .viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; padding: 0; border-radius: 50%; border: none; background: rgba(255,255,255,.15); color: #fff; font-size: 22px; }
+  .viewer .nav:hover { background: rgba(255,255,255,.3); }
+  .viewer .prev { left: 20px; }
+  .viewer .next { right: 20px; }
+  .viewer .close { position: absolute; top: 14px; right: 16px; padding: 4px 10px; border: none; background: none; color: #fff; font-size: 26px; line-height: 1; }
+  .viewer .bar { position: absolute; bottom: 18px; left: 0; right: 0; display: flex; gap: 20px; justify-content: center; align-items: center; color: #fff; font-size: 14px; }
+  .viewer .bar label { margin: 0; color: #fff; font-size: 14px; display: flex; align-items: center; gap: 6px; cursor: pointer; }
   .dup { margin-top: 12px; }
   .dup ul { margin: 6px 0 0; padding-left: 18px; }
   .dup a { color: inherit; }
@@ -138,6 +149,13 @@
 
     <h2 style="margin-top:24px">图片 <span class="muted" id="imageCount"></span></h2>
     <div class="images" id="images"></div>
+    <div class="viewer hidden" id="viewer">
+      <img id="viewerImg" alt="" referrerpolicy="no-referrer" />
+      <button class="nav prev" id="viewerPrev" title="上一张（←）">‹</button>
+      <button class="nav next" id="viewerNext" title="下一张（→）">›</button>
+      <button class="close" id="viewerClose" title="关闭（Esc）">×</button>
+      <div class="bar"><span id="viewerIndex"></span><label><input type="checkbox" id="viewerPick" /> 选用这张</label></div>
+    </div>
 
     <h2 style="margin-top:24px">颜色 <span class="muted" id="colorCount"></span></h2>
     <table>
@@ -532,8 +550,10 @@
   // ---------- 图片 ----------
   function renderImages() {
     $('images').innerHTML = state.images.map((img, i) => `
-      <label class="${img.on ? 'on' : ''}"><input type="checkbox" data-i="${i}" ${img.on ? 'checked' : ''} />
-      <img src="${esc(img.src)}" alt="" loading="lazy" referrerpolicy="no-referrer" /></label>`).join('')
+      <div class="tile ${img.on ? 'on' : ''}">
+        <img src="${esc(img.src)}" data-view="${i}" alt="" loading="lazy" referrerpolicy="no-referrer" title="点击放大" />
+        <label class="pick" title="是否选用"><input type="checkbox" data-i="${i}" ${img.on ? 'checked' : ''} /></label>
+      </div>`).join('')
       || '<p class="muted">没有抓到图片</p>';
     $('imageCount').textContent = `已选 ${state.images.filter(i => i.on).length} / ${state.images.length}`;
   }
@@ -542,6 +562,42 @@
     if (i === undefined) return;
     state.images[i].on = e.target.checked;
     renderImages();
+  });
+
+  // 点击图片放大预览，可左右翻页，也可在预览中勾选
+  let viewing = -1;
+  function showImage(i) {
+    const n = state.images.length;
+    if (!n) return;
+    viewing = (i + n) % n;
+    const img = state.images[viewing];
+    $('viewerImg').src = img.src;
+    $('viewerIndex').textContent = `${viewing + 1} / ${n}`;
+    $('viewerPick').checked = img.on;
+    $('viewer').classList.remove('hidden');
+  }
+  function closeViewer() {
+    viewing = -1;
+    $('viewer').classList.add('hidden');
+    $('viewerImg').removeAttribute('src');
+  }
+  $('images').addEventListener('click', e => {
+    const i = e.target.dataset.view;
+    if (i !== undefined) showImage(Number(i));
+  });
+  $('viewerPrev').addEventListener('click', () => showImage(viewing - 1));
+  $('viewerNext').addEventListener('click', () => showImage(viewing + 1));
+  $('viewerClose').addEventListener('click', closeViewer);
+  $('viewer').addEventListener('click', e => { if (e.target.id === 'viewer') closeViewer(); });
+  $('viewerPick').addEventListener('change', e => {
+    state.images[viewing].on = e.target.checked;
+    renderImages();
+  });
+  document.addEventListener('keydown', e => {
+    if (viewing < 0) return;
+    if (e.key === 'Escape') closeViewer();
+    else if (e.key === 'ArrowLeft') showImage(viewing - 1);
+    else if (e.key === 'ArrowRight') showImage(viewing + 1);
   });
 
   // ---------- 颜色 ----------
