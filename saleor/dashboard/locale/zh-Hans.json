@@ -884,7 +884,7 @@
   "0dCGBW": {
     "context": "button",
     "source": "Create structure",
-    "string": "新建结构"
+    "string": "新建导航菜单"
   },
   "0dPP8O": {
     "source": "Order #{orderId} was placed",
@@ -1298,7 +1298,7 @@
   "21cJ+Z": {
     "context": "structures section name",
     "source": "Structures",
-    "string": "结构"
+    "string": "导航菜单"
   },
   "22gNDo": {
     "context": "shipping method types help example row two result",
@@ -2286,7 +2286,7 @@
   },
   "5KS3f4": {
     "source": "Structure title",
-    "string": "结构标题"
+    "string": "导航菜单标题"
   },
   "5L99+F": {
     "context": "staff member has not signed in yet after invite",
@@ -4045,7 +4045,7 @@
   },
   "AN+zaK": {
     "source": "Structures",
-    "string": "结构"
+    "string": "导航菜单"
   },
   "AP312F": {
     "context": "create attribute dialog header",
@@ -4647,7 +4647,7 @@
   },
   "C4IOEN": {
     "source": "Created structure",
-    "string": "结构已创建"
+    "string": "导航菜单已创建"
   },
   "C4aDMy": {
     "context": "description",
@@ -10373,7 +10373,7 @@
   "TD/GhR": {
     "context": "header",
     "source": "Structure Items",
-    "string": "结构项"
+    "string": "菜单项"
   },
   "TDhHMi": {
     "source": "This needs to be unique",
@@ -10638,7 +10638,7 @@
   },
   "U2DyeR": {
     "source": "Are you sure you want to delete structure {menuName}?",
-    "string": "确定要删除结构 {menuName} 吗？"
+    "string": "确定要删除导航菜单 {menuName} 吗？"
   },
   "U2PF0d": {
     "context": "create category dialog description for root create",
@@ -12125,7 +12125,7 @@
   },
   "YEIFiI": {
     "source": "Add new structure item to begin creating structure",
-    "string": "添加新的结构项以开始创建结构"
+    "string": "添加新的菜单项以开始创建导航菜单"
   },
   "YEv+6G": {
     "context": "input helper text",
@@ -12908,7 +12908,7 @@
   },
   "aWzvoq": {
     "source": "{counter,plural,one{Are you sure you want to delete this structure?} other{Are you sure you want to delete {displayQuantity} structures?}}",
-    "string": "{counter,plural,one{确定要删除此结构吗？} other{确定要删除 {displayQuantity} 个结构吗？}}"
+    "string": "{counter,plural,one{确定要删除此导航菜单吗？} other{确定要删除 {displayQuantity} 个导航菜单吗？}}"
   },
   "aXytBR": {
     "source": "A required field is missing in the extension's manifest. {docsLink} ({errorCode})",
@@ -13630,7 +13630,7 @@
   },
   "cRQ9hb": {
     "source": "Deleted structure",
-    "string": "结构已删除"
+    "string": "导航菜单已删除"
   },
   "cS1wAx": {
     "source": "I know what I'm doing - confirm",
@@ -15123,7 +15123,7 @@
   "hM40BV": {
     "context": "header",
     "source": "Translation structure \"{menuItemName}\" - {languageCode}",
-    "string": "翻译结构“{menuItemName}” - {languageCode}"
+    "string": "翻译导航菜单“{menuItemName}” - {languageCode}"
   },
   "hMRP6J": {
     "source": "Default Address",
@@ -17641,7 +17641,7 @@
   "oNoehJ": {
     "context": "TopNav destination link tooltip to structures/menus list",
     "source": "All structures",
-    "string": "全部结构"
+    "string": "全部导航菜单"
   },
   "oO2fji": {
     "context": "dialog title for order discount",
@@ -18046,7 +18046,7 @@
   "pSb46V": {
     "context": "dialog header",
     "source": "Create structure",
-    "string": "新建结构"
+    "string": "新建导航菜单"
   },
   "pSqXo6": {
     "source": "Related Order",
@@ -18384,7 +18384,7 @@
   },
   "qL9Oi9": {
     "source": "Structure Title",
-    "string": "结构标题"
+    "string": "导航菜单标题"
   },
   "qLOBff": {
     "context": "dialog header",
@@ -20230,7 +20230,7 @@
   "vDp2tH": {
     "context": "all structures",
     "source": "All structures",
-    "string": "全部结构"
+    "string": "全部导航菜单"
   },
   "vEYtiq": {
     "source": "Category Name",
@@ -20642,7 +20642,7 @@
   "wAGThK": {
     "context": "dialog header",
     "source": "Delete structures",
-    "string": "删除结构"
+    "string": "删除导航菜单"
   },
   "wAgQU+": {
     "source": "Select a Model Type. All Models extending the type will be available as return reasons when returning products.",
@@ -20968,7 +20968,7 @@
   "x79cEk": {
     "context": "dialog header",
     "source": "Delete structure",
-    "string": "删除结构"
+    "string": "删除导航菜单"
   },
   "x8b3Vn": {
     "context": "empty state description in product type picker",
@@ -21202,7 +21202,7 @@
   },
   "xrF9JK": {
     "source": "No structures found",
-    "string": "未找到结构"
+    "string": "未找到导航菜单"
   },
   "xrKHS6": {
     "source": "Success",
