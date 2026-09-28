@@ -176,8 +176,8 @@ function ldPrice(offers) {
   return null;
 }
 
-async function scrapeGeneric(url) {
-  const html = await get(url);
+async function scrapeGeneric(url, page) {
+  const html = page ?? await get(url);
   const ld = findProductLd(html);
   const images = [];
   const variants = ld?.hasVariant ?? [];
@@ -217,6 +217,18 @@ const AMAZON_CURRENCY = {
 const amazonImageKey = url => url.replace(/\._[^/]*_(?=\.\w+$)/, '');
 const uniqueAmazonImages = urls => unique(urls).filter((url, i, all) => all.findIndex(o => amazonImageKey(o) === amazonImageKey(url)) === i);
 
+// 价格文字自带币种时以其为准，如 "LKR56,803.00"、"€12,99"
+const PRICE_SYMBOLS = { '€': 'EUR', '£': 'GBP', '₹': 'INR' };
+const priceCurrency = (text, siteCurrency) => text.trim().match(/^[A-Z]{3}/)?.[0] ?? PRICE_SYMBOLS[text.trim()[0]] ?? siteCurrency;
+
+// 购买框的价格数据，形如 {"displayPrice":"$34.98","priceAmount":34.98,"currencySymbol":"$",...}；
+// 桌面版的 a-offscreen 价格文字有时是空的，移动版只有这一处
+function buyboxPrice(html, siteCurrency) {
+  const m = html.match(/"priceAmount"\s*:\s*([\d.]+)\s*,\s*"currencySymbol"\s*:\s*"([^"]*)"/);
+  const amount = Number(m?.[1]);
+  return amount > 0 ? { amount, currency: priceCurrency(m[2], siteCurrency) } : null;
+}
+
 function jsonAfter(html, marker) {
   // 取 marker 之后的第一个完整 JSON 对象/数组
   const start = html.indexOf(marker);
@@ -245,7 +257,7 @@ function jsonAfter(html, marker) {
   return null;
 }
 
-async function scrapeAmazon(url) {
+async function scrapeAmazon(url, page) {
   const u = new URL(url);
   const asin = u.pathname.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i)?.[1];
   if (!asin) throw new ScrapeError('不是亚马逊商品链接（应包含 /dp/商品编号）', 'BAD_URL');
@@ -253,9 +265,12 @@ async function scrapeAmazon(url) {
   const siteCurrency = AMAZON_CURRENCY[host] ?? '';
   // 亚马逊按访问者所在地区换算显示币种，用偏好 Cookie 固定为站点本币
   const headers = siteCurrency ? { Cookie: `i18n-prefs=${siteCurrency}; lc-main=en_US` } : {};
-  const blocked = page => /captcha|Robot Check|api-services-support@amazon/i.test(page) && !/id="productTitle"/.test(page);
-  const html = await get(`${u.origin}/dp/${asin}`, { headers });
+  const blocked = h => /captcha|Robot Check|api-services-support@amazon/i.test(h) && !/id="productTitle"/.test(h);
+  // 浏览器插件传来的页面：运营在手机模式下打开时是移动版
+  if (page && !/id=["']productTitle["']/.test(page) && /<span id=["']title["']/.test(page)) return parseAmazonMobile(page, u, asin, siteCurrency);
+  const html = page ?? await get(`${u.origin}/dp/${asin}`, { headers });
   if (blocked(html)) {
+    if (page) throw new ScrapeError('插件传来的是亚马逊验证页，请在浏览器里完成验证、打开商品页后再采集', 'BLOCKED');
     // 服务器 IP 请求多了，桌面版常被拦到验证码页，此时移动版页面往往仍能打开
     const mobile = await get(`${u.origin}/gp/aw/d/${asin}`, { headers: { ...headers, 'User-Agent': MOBILE_UA } });
     if (blocked(mobile)) throw new ScrapeError('被亚马逊的反爬验证拦截，请稍后重试，或换用商品的其他链接', 'BLOCKED');
@@ -278,9 +293,7 @@ async function scrapeAmazon(url) {
 
   const priceText = decode(html.match(/class=["']a-price[^"']*["'][^>]*>\s*<span class=["']a-offscreen["']>([^<]+)</i)?.[1] ?? '');
   const amount = Number(priceText.replace(/[^\d.,]/g, '').replace(/,(?=\d{3}\b)/g, '').replace(',', '.'));
-  // 价格文字自带币种时以其为准，如 "LKR56,803.00"、"€12,99"
-  const SYMBOLS = { '€': 'EUR', '£': 'GBP', '₹': 'INR' };
-  const currency = priceText.match(/^[A-Z]{3}/)?.[0] ?? SYMBOLS[priceText.trim()[0]] ?? siteCurrency;
+  const price = amount > 0 ? { amount, currency: priceCurrency(priceText, siteCurrency) } : buyboxPrice(html, siteCurrency);
 
   // 图集数据形如 'colorImages': { 'initial': A.$.parseJSON('[...]') }
   const galleryAt = html.indexOf('colorImages');
@@ -313,7 +326,7 @@ async function scrapeAmazon(url) {
     sourceUrl: `${u.origin}/dp/${asin}`,
     name,
     description,
-    price: amount > 0 ? { amount, currency } : null,
+    price,
     images: uniqueAmazonImages(images),
     sizes: unique(sizes).sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b)),
     colors: color ? [color] : unique(variations.color_name ?? []).slice(0, 1),
@@ -327,9 +340,6 @@ function parseAmazonMobile(html, u, asin, siteCurrency) {
   const name = htmlToText(html.match(/<span id=["']title["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? '');
   if (!name) throw new ScrapeError('没有解析到商品名称，页面结构可能已变化', 'NOT_FOUND');
 
-  const amount = Number(html.match(/"priceAmount"\s*:\s*([\d.]+)/)?.[1]
-    ?? `${html.match(/class=["']a-price-whole["']>(\d[\d,]*)/)?.[1]?.replace(/,/g, '') ?? ''}.${html.match(/class=["']a-price-fraction["']>(\d+)/)?.[1] ?? '0'}`);
-
   // 只取链接对应的颜色：页面上写明「Selected color is X.」，图集按颜色名分组
   const color = decode(html.match(/Selected color is ([^"<]+?)\. /)?.[1] ?? '').trim();
   const size = decode(html.match(/Selected size is ([^"<]+?)\. /)?.[1] ?? '').trim();
@@ -341,7 +351,7 @@ function parseAmazonMobile(html, u, asin, siteCurrency) {
     sourceUrl: `${u.origin}/dp/${asin}`,
     name,
     description: '',
-    price: amount > 0 ? { amount, currency: siteCurrency } : null,
+    price: buyboxPrice(html, siteCurrency),
     images: uniqueAmazonImages(images),
     sizes: size ? [size] : [],
     colors: color ? [color] : [],
@@ -353,9 +363,9 @@ function parseAmazonMobile(html, u, asin, siteCurrency) {
 // ---------- 自动识别 ----------
 
 // 亚马逊链接按亚马逊解析；其他链接先试 Shopify 公开接口，拿不到再从网页中读取商品数据
-async function scrapeAuto(url) {
+async function scrapeAuto(url, page) {
   const u = new URL(url);
-  if (/(^|\.)amazon\./i.test(u.hostname)) return scrapeAmazon(url);
+  if (/(^|\.)amazon\./i.test(u.hostname)) return scrapeAmazon(url, page);
   if (/\/products\/[^/?#]+/.test(u.pathname)) {
     try {
       return await scrapeShopify(url);
@@ -363,7 +373,7 @@ async function scrapeAuto(url) {
       // 不是 Shopify 网站，按通用方式处理
     }
   }
-  return scrapeGeneric(url);
+  return scrapeGeneric(url, page);
 }
 
 // ---------- 入口 ----------
@@ -375,7 +385,9 @@ export const PLATFORMS = {
   amazon: scrapeAmazon,
 };
 
-export async function scrape(platform = 'auto', url) {
+// page：浏览器插件在运营自己的浏览器里取到的商品页 HTML（可选）。有它时不再由服务器请求对方网页，
+// 不会被反爬拦截，也能读到抖音、小红书这类必须登录、由脚本渲染的页面
+export async function scrape(platform = 'auto', url, page) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -390,7 +402,7 @@ export async function scrape(platform = 'auto', url) {
   const fn = PLATFORMS[platform];
   if (!fn) throw new ScrapeError('不支持的平台', 'BAD_PLATFORM');
   deadline = Date.now() + SCRAPE_LIMIT;
-  let product = await fn(parsed.href);
+  let product = await fn(parsed.href, page || undefined);
   const missing = product[PAGE] ? missingFields(product) : [];
   const left = deadline - Date.now();
   if (missing.length && left < 5_000) {

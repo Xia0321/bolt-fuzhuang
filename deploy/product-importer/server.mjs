@@ -10,7 +10,7 @@
 //   GET  /api/options    商品类型、分类、渠道、仓库
 //   POST /api/discover   { categoryId, refresh? }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
 //                        返回逐行 JSON 流（application/x-ndjson），实时推送搜索进度与结果，事件见 discover.mjs
-//   POST /api/scrape     { url, platform? }  平台默认自动识别；另返回 categoryGuess（按关键词猜的分类，翻译失败时兜底）
+//   POST /api/scrape     { url, platform?, htmlGz? }  平台默认自动识别；htmlGz 为浏览器插件取到的商品页（gzip+base64），有它时不再请求对方网站；另返回 categoryGuess（按关键词猜的分类，翻译失败时兜底）
 //   POST /api/translate  { name, description, colors, colorHints, suggestCategory }
 //   POST /api/duplicates { names, lang?, sourceUrl }  入库前名称查重：与已有商品同语言的名称比较（lang 默认按 names[0] 判断），
 //                        并检查来源链接是否导入过；返回 { lang, matches: [{ id, name, matched, reason }] }
@@ -32,6 +32,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateFields, translateProduct } from './translate.mjs';
@@ -99,6 +100,15 @@ function log(entry) {
 function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-store' });
   res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
+}
+
+// 浏览器插件传来的商品页：gzip 后 base64，解压后最多 20MB
+function gunzipPage(base64) {
+  try {
+    return zlib.gunzipSync(Buffer.from(base64, 'base64'), { maxOutputLength: 20_000_000 }).toString('utf8');
+  } catch {
+    throw new ScrapeError('插件传来的页面内容无法解析，请刷新商品页后重新采集');
+  }
 }
 
 function readBody(req, limit = 2_000_000) {
@@ -176,9 +186,11 @@ const server = http.createServer(async (req, res) => {
       return res.end();
     }
     if (req.method === 'POST' && route === '/api/scrape') {
-      const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim());
+      const page = input.htmlGz ? gunzipPage(String(input.htmlGz)) : undefined;
+      const product = await scrape(input.platform ? String(input.platform) : 'auto', String(input.url).trim(), page);
+      if (page) product.viaExtension = true;
       product.categoryGuess = guessCategory(product, (await loadOptions(appToken)).categories);
-      log({ event: 'scraped', staff, platform: product.platform, url: input.url, colors: product.colors.length, aiFilled: product.aiFilled });
+      log({ event: 'scraped', staff, platform: product.platform, url: input.url, viaExtension: !!page, colors: product.colors.length, aiFilled: product.aiFilled });
       return send(res, 200, product);
     }
     if (req.method === 'POST' && route === '/api/translate') {

@@ -130,7 +130,7 @@
       <div class="grow"><input id="url" type="url" placeholder="粘贴商品详情页链接，https://..." /></div>
       <button id="btnScrape">抓取并翻译</button>
     </div>
-    <p class="muted">支持 Shopify 店铺、品牌独立站、亚马逊的商品详情页，自动识别；淘宝、天猫、京东、1688 暂不支持。</p>
+    <p class="muted">支持 Shopify 店铺、品牌独立站、亚马逊的商品详情页，自动识别。亚马逊被拦截，或抖音、小红书等需要登录的网站，请装「PINSO 商品采集」浏览器插件：在商品页点插件图标，会自动打开本页并开始抓取。</p>
   </section>
 
   <section id="step2" class="hidden">
@@ -196,6 +196,9 @@
   let token = '';
   let options = null;
   let scraped = null;
+  // 浏览器插件采集到的商品页 { url, htmlGz }；抓取这个链接时把页面一起交给服务器，不再由服务器去请求对方网站
+  let captured = null;
+  let ready = false;
   // colors: [{ source, en, zh, ja, hex }]；images: [{ src, on }]
   // dupChecked：已查重并提示过的名称，名称未变时再次点入库即确认入库
   const state = { texts: { en: {}, zh: {}, ja: {} }, colors: [], images: [], dupChecked: '' };
@@ -209,6 +212,16 @@
       token = payload.token;
       if (first) init();
     }
+  });
+
+  // 浏览器插件（deploy/product-importer/extension）的内容脚本把采集到的商品页转交给本页
+  window.addEventListener('message', e => {
+    if (e.source !== window || e.data?.source !== 'pinso-extension' || e.data.type !== 'capture') return;
+    const { id, url, htmlGz } = e.data;
+    window.postMessage({ source: 'pinso-importer', type: 'capture-received', id }, location.origin);
+    captured = { url, htmlGz };
+    $('url').value = url;
+    if (ready) $('btnScrape').click();
   });
 
   function redirect(to) {
@@ -275,6 +288,9 @@
     fill('warehouse', options.warehouses, w => w.name);
     $('step1').classList.remove('hidden');
     $('stepLink').classList.remove('hidden');
+    ready = true;
+    // 插件在本页连上后台之前就转交了商品页
+    if (captured) $('btnScrape').click();
   }
 
 
@@ -429,13 +445,13 @@
     show('');
     const url = $('url').value.trim();
     if (!url) throw new Error('请粘贴商品链接');
-    scraped = await api('/scrape', { url });
+    scraped = await api('/scrape', captured?.url === url ? { url, htmlGz: captured.htmlGz } : { url });
     state.images = scraped.images.map(src => ({ src, on: true }));
     state.colors = [];
     resetDuplicates();
     $('sizes').value = scraped.sizes.join(', ');
     $('source').textContent = `${scraped.name}\n\n${scraped.description}`;
-    $('warnings').innerHTML = `<p class="muted">已识别为：${esc(PLATFORM_NAMES[scraped.platform] || scraped.platform)}</p>`
+    $('warnings').innerHTML = `<p class="muted">已识别为：${esc(PLATFORM_NAMES[scraped.platform] || scraped.platform)}${scraped.viaExtension ? '（浏览器插件采集）' : ''}</p>`
       + (scraped.aiFilled?.length ? `<div class="msg warn">${esc(scraped.aiFilled.join('、'))}是 AI 从网页正文中读出的，请核对。</div>` : '')
       + (scraped.warnings || []).map(w => `<div class="msg warn">${esc(w)}</div>`).join('');
     renderImages();

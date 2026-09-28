@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "PINSO 商品采集",
+  "version": "1.0.0",
+  "description": "在商品详情页点一下，把商品交给 PINSO 后台的商品导入（亚马逊、独立站、抖音、小红书等）",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://pinso.top/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "采集当前商品到 PINSO" },
+  "content_scripts": [
+    {
+      "matches": ["https://pinso.top/importer/*"],
+      "js": ["importer.js"],
+      "all_frames": true
+    }
+  ]
+}
