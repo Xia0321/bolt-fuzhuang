@@ -1,0 +1,19 @@
+diff --git a/src/components/Sidebar/menu/hooks/useMenuStructure.tsx b/src/components/Sidebar/menu/hooks/useMenuStructure.tsx
+index 93d2909..6742ec0 100644
+--- a/src/components/Sidebar/menu/hooks/useMenuStructure.tsx
++++ b/src/components/Sidebar/menu/hooks/useMenuStructure.tsx
+@@ -110,13 +110,7 @@ export function useMenuStructure() {
+         permissions: [],
+         type: "item",
+       },
+-      {
+-        label: intl.formatMessage(sectionNames.exploreExtensions),
+-        id: "explore-extensions",
+-        url: ExtensionsPaths.exploreExtensions,
+-        permissions: [],
+-        type: "item" as const,
+-      },
++      // PINSO：不显示「探索」（Saleor 官方扩展市场），运营用不到
+     ],
+   });
+ 
