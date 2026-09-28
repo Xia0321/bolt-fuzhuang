@@ -300,12 +300,19 @@ export async function loadStore(channel: string, languageCode: string): Promise<
     const ib = menuOrder.indexOf(b.slug);
     return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
   });
+  // 菜单里没有的分类（如导入商品时新建的）接在导航最后，新建分类不必再去后台加菜单
+  const navbarWithCategories: MenuLink[] = [
+    ...navbar,
+    ...categories
+      .filter(c => !menuOrder.includes(c.slug))
+      .map(c => ({ id: c.id, name: c.name, url: `/shop/${c.slug}`, category: c })),
+  ];
 
   return {
     site: mapSite(pages.find(p => p.slug === 'site-settings')),
     categories,
     products,
-    navbar,
+    navbar: navbarWithCategories,
     footer: mapMenu(data.footer),
     footerLegal: mapMenu(data.footerLegal),
     banners,
