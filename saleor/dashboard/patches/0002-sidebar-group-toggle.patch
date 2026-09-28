@@ -1,0 +1,115 @@
+diff --git a/src/components/Sidebar/menu/ItemGroup.test.tsx b/src/components/Sidebar/menu/ItemGroup.test.tsx
+new file mode 100644
+index 0000000..ee181f9
+--- /dev/null
++++ b/src/components/Sidebar/menu/ItemGroup.test.tsx
+@@ -0,0 +1,66 @@
++import { ThemeProvider } from "@saleor/macaw-ui-next";
++import { render, screen } from "@testing-library/react";
++import userEvent from "@testing-library/user-event";
++import { useLocation } from "react-router";
++import { MemoryRouter } from "react-router-dom";
++
++import { ItemGroup } from "./ItemGroup";
++import { type SidebarMenuItem } from "./types";
++
++jest.mock("./Item", () => ({
++  MenuItem: ({ menuItem }: { menuItem: SidebarMenuItem }) => <span>{menuItem.label}</span>,
++}));
++
++const menuItem = {
++  id: "customers",
++  label: "客户",
++  url: "/customers",
++  type: "itemGroup",
++  children: [{ id: "all", label: "全部", url: "/customers/all", type: "item" }],
++} as SidebarMenuItem;
++
++const Location = () => <span data-test-id="location">{useLocation().pathname}</span>;
++
++const setup = (path: string) =>
++  render(
++    <ThemeProvider>
++      <MemoryRouter initialEntries={[path]}>
++        <ItemGroup menuItem={menuItem} />
++        <Location />
++      </MemoryRouter>
++    </ThemeProvider>,
++  );
++
++const isExpanded = () =>
++  document.querySelector("button[aria-expanded]")?.getAttribute("aria-expanded") === "true";
++
++describe("ItemGroup（PINSO：点父菜单文字切换展开 / 收起）", () => {
++  it("未展开时点文字：展开并打开该组页面", async () => {
++    setup("/orders");
++    expect(isExpanded()).toBe(false);
++
++    await userEvent.click(screen.getByText("客户"));
++
++    expect(isExpanded()).toBe(true);
++    expect(screen.getByTestId("location")).toHaveTextContent("/customers");
++  });
++
++  it("已展开时点文字：收起，不跳转", async () => {
++    setup("/customers");
++    expect(isExpanded()).toBe(true);
++
++    await userEvent.click(screen.getByText("客户"));
++
++    expect(isExpanded()).toBe(false);
++    expect(screen.getByTestId("location")).toHaveTextContent("/customers");
++  });
++
++  it("收起后再点文字：重新展开", async () => {
++    setup("/customers");
++
++    await userEvent.click(screen.getByText("客户"));
++    await userEvent.click(screen.getByText("客户"));
++
++    expect(isExpanded()).toBe(true);
++  });
++});
+diff --git a/src/components/Sidebar/menu/ItemGroup.tsx b/src/components/Sidebar/menu/ItemGroup.tsx
+index b853e80..5b9a222 100644
+--- a/src/components/Sidebar/menu/ItemGroup.tsx
++++ b/src/components/Sidebar/menu/ItemGroup.tsx
+@@ -1,6 +1,6 @@
+ // @ts-strict-ignore
+ import { Box, List, sprinkles, Text } from "@saleor/macaw-ui-next";
+-import { Fragment } from "react";
++import { Fragment, type MouseEvent } from "react";
+ import { useLocation } from "react-router";
+ import { Link } from "react-router-dom";
+ 
+@@ -29,6 +29,22 @@ export const ItemGroup = ({ menuItem }: Props) => {
+     }
+   };
+ 
++  // PINSO：点父菜单文字在展开 / 收起之间切换。UI 库中点文字只会展开（点右侧箭头才会切换），
++  // 已展开时拦下跳转和「展开」，改为点一下箭头把它收起；未展开时保持原行为（展开并打开该组页面）
++  const handleLabelClick = (event: MouseEvent<HTMLAnchorElement>): void => {
++    const toggle = event.currentTarget
++      .closest('[data-macaw-ui-component="ItemGroup.Trigger"]')
++      ?.querySelector<HTMLButtonElement>("button[aria-expanded]");
++
++    if (toggle?.getAttribute("aria-expanded") !== "true") {
++      return;
++    }
++
++    event.preventDefault();
++    event.stopPropagation();
++    toggle.click();
++  };
++
+   return (
+     <List.ItemGroup defaultExpanded={isExpanded} data-test-id={`menu-list-item`}>
+       <List.ItemGroup.Trigger
+@@ -46,6 +62,7 @@ export const ItemGroup = ({ menuItem }: Props) => {
+         <Link
+           replace={isActive}
+           to={menuItem?.url ?? ""}
++          onClick={handleLabelClick}
+           className={sprinkles({
+             width: "100%",
+             display: "block",
