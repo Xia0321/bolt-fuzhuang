@@ -1,5 +1,5 @@
 diff --git a/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx b/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
-index 4bac2d2..395be6d 100644
+index 4bac2d2..61a01c7 100644
 --- a/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
 +++ b/src/categories/components/CreateCategoryDialog/CreateCategoryDialog.tsx
 @@ -9,11 +9,17 @@ import { type ProductErrorFragment } from "@dashboard/graphql";
@@ -30,7 +30,7 @@ index 4bac2d2..395be6d 100644
    }) => SubmitPromise<ProductErrorFragment[]>;
  }
  
-@@ -68,6 +76,11 @@ export const CreateCategoryDialog = ({
+@@ -68,6 +76,13 @@ export const CreateCategoryDialog = ({
    const [showApiErrors, setShowApiErrors] = useState(false);
    // null = not synced yet, so the first open (including mount-with-open) still resets.
    const [prevOpen, setPrevOpen] = useState<boolean | null>(null);
@@ -39,10 +39,12 @@ index 4bac2d2..395be6d 100644
 +  const [translations, setTranslations] = useState<CategoryTranslations | null>(null);
 +  const [translating, setTranslating] = useState(false);
 +  const [translateError, setTranslateError] = useState("");
++  // 上次翻译所用的原文，创建时原文有变化就重新翻译（如勾选翻译后才填写描述）
++  const [translatedFrom, setTranslatedFrom] = useState("");
    const isChild = Boolean(parentId);
    const initialForm: CreateCategoryFormData = {
      name: "",
-@@ -81,8 +94,41 @@ export const CreateCategoryDialog = ({
+@@ -81,8 +96,56 @@ export const CreateCategoryDialog = ({
      setPrevOpen(open);
      setSubmitErrors([]);
      setShowApiErrors(false);
@@ -50,22 +52,37 @@ index 4bac2d2..395be6d 100644
 +    setTranslations(null);
 +    setTranslating(false);
 +    setTranslateError("");
++    setTranslatedFrom("");
    }
  
-+  const translate = async (name: string, description: string) => {
++  const sourceKey = (name: string, description: string): string =>
++    JSON.stringify([name.trim(), description.trim()]);
++
++  // 返回翻译结果，失败时返回 null
++  const translate = async (
++    name: string,
++    description: string,
++  ): Promise<CategoryTranslations | null> => {
 +    if (!name.trim()) {
 +      setTranslateError(intl.formatMessage(messages.pinsoNeedName));
 +
-+      return;
++      return null;
 +    }
 +
 +    setTranslating(true);
 +    setTranslateError("");
 +
 +    try {
-+      setTranslations(await fetchCategoryTranslations(name.trim(), description.trim()));
++      const result = await fetchCategoryTranslations(name.trim(), description.trim());
++
++      setTranslations(result);
++      setTranslatedFrom(sourceKey(name, description));
++
++      return result;
 +    } catch (e) {
 +      setTranslateError(e instanceof Error ? e.message : String(e));
++
++      return null;
 +    } finally {
 +      setTranslating(false);
 +    }
@@ -84,15 +101,31 @@ index 4bac2d2..395be6d 100644
    const fieldErrors = [...(showApiErrors ? apiErrors : []), ...submitErrors]
      .map(error => error.message)
      .filter(Boolean)
-@@ -99,6 +145,7 @@ export const CreateCategoryDialog = ({
+@@ -94,11 +157,23 @@ export const CreateCategoryDialog = ({
+         <Form
+           initial={initialForm}
+           onSubmit={async data => {
++            let submitTranslations = translateOn ? translations : null;
++
++            // 翻译后又改过名称或描述时，先按最新内容重新翻译；翻译失败则不创建，错误显示在翻译区域
++            if (translateOn && translatedFrom !== sourceKey(data.name, data.description)) {
++              submitTranslations = await translate(data.name, data.description);
++
++              if (!submitTranslations) {
++                return [];
++              }
++            }
++
+             setShowApiErrors(true);
+ 
              const errors = await onSubmit({
                name: data.name.trim(),
                description: plainTextToEditorJsData(data.description),
-+              translations: translateOn ? translations : null,
++              translations: submitTranslations,
              });
  
              setSubmitErrors(errors ?? []);
-@@ -141,6 +188,74 @@ export const CreateCategoryDialog = ({
+@@ -141,6 +216,74 @@ export const CreateCategoryDialog = ({
                        rows={4}
                        data-test-id="category-description-input"
                      />
@@ -167,7 +200,7 @@ index 4bac2d2..395be6d 100644
                      {fieldErrors ? (
                        <Text size={2} color="critical1" as="p">
                          {fieldErrors}
-@@ -155,7 +270,7 @@ export const CreateCategoryDialog = ({
+@@ -155,7 +298,7 @@ export const CreateCategoryDialog = ({
                  <ConfirmButton
                    transitionState={confirmButtonState}
                    onClick={submit}
