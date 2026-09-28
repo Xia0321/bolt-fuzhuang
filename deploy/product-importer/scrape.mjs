@@ -15,6 +15,7 @@ import { fillWithAI, missingFields } from './extract.mjs';
 const PAGE = Symbol('page');
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
+const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
 
 export class ScrapeError extends Error {
   constructor(message, code = 'SCRAPE_FAILED') {
@@ -212,6 +213,10 @@ const AMAZON_CURRENCY = {
   'amazon.cn': 'CNY',
 };
 
+// 同一张图的不同尺寸只留第一个（高清优先），如 71+SzQ7XpqL._AC_SL1500_.jpg 与 71+SzQ7XpqL._AC_SX342_.jpg
+const amazonImageKey = url => url.replace(/\._[^/]*_(?=\.\w+$)/, '');
+const uniqueAmazonImages = urls => unique(urls).filter((url, i, all) => all.findIndex(o => amazonImageKey(o) === amazonImageKey(url)) === i);
+
 function jsonAfter(html, marker) {
   // 取 marker 之后的第一个完整 JSON 对象/数组
   const start = html.indexOf(marker);
@@ -247,11 +252,14 @@ async function scrapeAmazon(url) {
   const host = u.hostname.replace(/^www\./, '');
   const siteCurrency = AMAZON_CURRENCY[host] ?? '';
   // 亚马逊按访问者所在地区换算显示币种，用偏好 Cookie 固定为站点本币
-  const html = await get(`${u.origin}/dp/${asin}`, {
-    headers: siteCurrency ? { Cookie: `i18n-prefs=${siteCurrency}; lc-main=en_US` } : {},
-  });
-  if (/captcha|Robot Check|api-services-support@amazon/i.test(html) && !/id="productTitle"/.test(html)) {
-    throw new ScrapeError('被亚马逊的反爬验证拦截，请稍后重试，或换用商品的其他链接', 'BLOCKED');
+  const headers = siteCurrency ? { Cookie: `i18n-prefs=${siteCurrency}; lc-main=en_US` } : {};
+  const blocked = page => /captcha|Robot Check|api-services-support@amazon/i.test(page) && !/id="productTitle"/.test(page);
+  const html = await get(`${u.origin}/dp/${asin}`, { headers });
+  if (blocked(html)) {
+    // 服务器 IP 请求多了，桌面版常被拦到验证码页，此时移动版页面往往仍能打开
+    const mobile = await get(`${u.origin}/gp/aw/d/${asin}`, { headers: { ...headers, 'User-Agent': MOBILE_UA } });
+    if (blocked(mobile)) throw new ScrapeError('被亚马逊的反爬验证拦截，请稍后重试，或换用商品的其他链接', 'BLOCKED');
+    return parseAmazonMobile(mobile, u, asin, siteCurrency);
   }
   const text = id => htmlToText(html.match(new RegExp(`id=["']${id}["'][^>]*>([\\s\\S]*?)</(?:span|div|ul)>`, 'i'))?.[1] ?? '');
   const name = text('productTitle');
@@ -306,9 +314,38 @@ async function scrapeAmazon(url) {
     name,
     description,
     price: amount > 0 ? { amount, currency } : null,
-    images: unique(images),
+    images: uniqueAmazonImages(images),
     sizes: unique(sizes).sort((a, b) => sizeOrder.indexOf(a) - sizeOrder.indexOf(b)),
     colors: color ? [color] : unique(variations.color_name ?? []).slice(0, 1),
+    [PAGE]: html,
+  };
+}
+
+// 亚马逊移动版商品页：结构与桌面版不同，尺码列表和商品要点是点开后才加载的，
+// 这里只能读到当前选中的尺码，描述交给 AI 从正文补全
+function parseAmazonMobile(html, u, asin, siteCurrency) {
+  const name = htmlToText(html.match(/<span id=["']title["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] ?? '');
+  if (!name) throw new ScrapeError('没有解析到商品名称，页面结构可能已变化', 'NOT_FOUND');
+
+  const amount = Number(html.match(/"priceAmount"\s*:\s*([\d.]+)/)?.[1]
+    ?? `${html.match(/class=["']a-price-whole["']>(\d[\d,]*)/)?.[1]?.replace(/,/g, '') ?? ''}.${html.match(/class=["']a-price-fraction["']>(\d+)/)?.[1] ?? '0'}`);
+
+  // 只取链接对应的颜色：页面上写明「Selected color is X.」，图集按颜色名分组
+  const color = decode(html.match(/Selected color is ([^"<]+?)\. /)?.[1] ?? '').trim();
+  const size = decode(html.match(/Selected size is ([^"<]+?)\. /)?.[1] ?? '').trim();
+  const gallery = jsonAfter(html, '"colorImages":') ?? {};
+  const images = (gallery[color] ?? Object.values(gallery)[0] ?? []).map(i => i.hiRes || i.large);
+
+  return {
+    platform: 'amazon',
+    sourceUrl: `${u.origin}/dp/${asin}`,
+    name,
+    description: '',
+    price: amount > 0 ? { amount, currency: siteCurrency } : null,
+    images: uniqueAmazonImages(images),
+    sizes: size ? [size] : [],
+    colors: color ? [color] : [],
+    warnings: ['亚马逊桌面版页面被拦截，改用了移动版页面：只读到当前选中的尺码，请补全其他尺码并核对描述'],
     [PAGE]: html,
   };
 }
