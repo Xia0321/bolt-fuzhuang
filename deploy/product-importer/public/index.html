@@ -79,6 +79,12 @@
   .steps li { padding: 2px 0; }
   .steps li.ok { color: var(--ok); }
   .steps li.bad { color: var(--danger); }
+  .guide { margin-top: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; font-size: 14px; }
+  .guide summary { cursor: pointer; font-weight: 600; }
+  .guide ol { margin: 8px 0; padding-left: 20px; line-height: 1.8; }
+  .guide code { background: var(--soft); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .guide .download { display: inline-block; margin: 6px 0 4px; padding: 6px 14px; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
+  .badge-ok { color: var(--ok); font-weight: 500; font-size: 13px; margin-left: 6px; }
   .find { animation: fadein .3s ease; }
   @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   a.primary { display: inline-block; border-radius: 6px; background: var(--accent); color: #fff; text-decoration: none; }
@@ -130,7 +136,27 @@
       <div class="grow"><input id="url" type="url" placeholder="粘贴商品详情页链接，https://..." /></div>
       <button id="btnScrape">抓取并翻译</button>
     </div>
-    <p class="muted">支持 Shopify 店铺、品牌独立站、亚马逊的商品详情页，自动识别。亚马逊被拦截，或抖音、小红书等需要登录的网站，请装「PINSO 商品采集」浏览器插件：在商品页点插件图标，会自动打开本页并开始抓取。</p>
+    <p class="muted">支持 Shopify 店铺、品牌独立站、亚马逊的商品详情页，自动识别。亚马逊提示被拦截，或抖音、小红书等需要登录才能看的网站，请用下面的浏览器插件采集。</p>
+    <details class="guide" id="extGuide">
+      <summary>浏览器插件「PINSO 商品采集」<span class="badge-ok hidden" id="extInstalled"></span></summary>
+      <p class="muted" style="margin:6px 0 0">在你自己的浏览器里打开商品页，点一下插件就把商品交给本页，不会被网站拦截，需要登录的网站也能采集。</p>
+      <a class="download" href="extension.zip" download>下载插件</a>
+      <p style="margin:8px 0 0"><b>安装（每台电脑一次，需用 Chrome 或 Edge）</b></p>
+      <ol>
+        <li>点上面「下载插件」，解压得到 <code>pinso-capture</code> 文件夹，放到不会被删除的位置（删了插件就不能用）</li>
+        <li>浏览器地址栏打开 <code>chrome://extensions</code>（Edge 为 <code>edge://extensions</code>），打开「开发者模式」开关</li>
+        <li>点「加载已解压的扩展程序」，选择 <code>pinso-capture</code> 文件夹</li>
+        <li>点浏览器工具栏的拼图图标，把「PINSO 商品采集」固定到工具栏</li>
+      </ol>
+      <p style="margin:8px 0 0"><b>使用</b></p>
+      <ol>
+        <li>在同一个浏览器里保持后台已登录</li>
+        <li>打开商品详情页（亚马逊、独立站、抖音、小红书等），选好要导入的颜色和尺码</li>
+        <li>点工具栏上的插件图标，页面右上角提示「已采集」后会自动打开本页并开始抓取</li>
+        <li>核对内容后入库，和贴链接导入一样</li>
+      </ol>
+      <p class="muted" style="margin:4px 0 0">插件有更新时，重新下载解压、覆盖原文件夹，再到扩展程序页点插件上的刷新按钮。</p>
+    </details>
   </section>
 
   <section id="step2" class="hidden">
@@ -214,12 +240,20 @@
     }
   });
 
-  // 浏览器插件（deploy/product-importer/extension）的内容脚本把采集到的商品页转交给本页
+  // 浏览器插件（deploy/product-importer/extension）的内容脚本把采集到的商品页转交给本页；
+  // 插件加载时先发 hello，页面据此显示已安装
   window.addEventListener('message', e => {
-    if (e.source !== window || e.data?.source !== 'pinso-extension' || e.data.type !== 'capture') return;
+    if (e.source !== window || e.data?.source !== 'pinso-extension') return;
+    if (e.data.type === 'hello') {
+      $('extInstalled').textContent = `✓ 已安装 v${e.data.version}`;
+      $('extInstalled').classList.remove('hidden');
+      return;
+    }
+    if (e.data.type !== 'capture') return;
     const { id, url, htmlGz } = e.data;
     window.postMessage({ source: 'pinso-importer', type: 'capture-received', id }, location.origin);
     captured = { url, htmlGz };
+    $('extGuide').open = false;
     $('url').value = url;
     if (ready) $('btnScrape').click();
   });

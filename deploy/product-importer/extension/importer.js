@@ -8,6 +8,9 @@ try {
   // 忽略
 }
 
+// 告诉页面插件已安装
+window.postMessage({ source: 'pinso-extension', type: 'hello', version: chrome.runtime.getManifest().version }, location.origin);
+
 const MAX_AGE = 10 * 60_000;
 let delivered = '';
 

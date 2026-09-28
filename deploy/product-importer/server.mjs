@@ -7,6 +7,7 @@
 //   GET  /manifest       Saleor 应用清单（安装时读取）
 //   POST /register       Saleor 安装应用时回传应用令牌；收到后稍等安装完成再向 Saleor 验证，确认属于本应用才启用
 //   GET  /               后台中打开的操作页面
+//   GET  /extension.zip  「PINSO 商品采集」浏览器插件安装包（extension/ 目录，启动时打包）
 //   GET  /api/options    商品类型、分类、渠道、仓库
 //   POST /api/discover   { categoryId, refresh? }  按分类联网搜索可挑选商品的分类页 / 列表页（需 Claude 订阅令牌）
 //                        返回逐行 JSON 流（application/x-ndjson），实时推送搜索进度与结果，事件见 discover.mjs
@@ -38,6 +39,7 @@ import { scrape, ScrapeError } from './scrape.mjs';
 import { translateBackend, translateFields, translateProduct } from './translate.mjs';
 import { guessCategory } from './category.mjs';
 import { discoverStream } from './discover.mjs';
+import { buildExtensionZip } from './extension-zip.mjs';
 import { detectLang, findDuplicates, gql, importProduct, loadOptions, SaleorError, verifyStaff } from './saleor.mjs';
 
 const env = process.env;
@@ -50,6 +52,8 @@ const DATA_DIR = env.DATA_DIR || '/data';
 const TOKEN_FILE = path.join(DATA_DIR, 'app-token.json');
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PAGE = fs.readFileSync(path.join(HERE, 'public', 'index.html'), 'utf8');
+// 「PINSO 商品采集」浏览器插件安装包，导入页提供下载
+const EXTENSION_ZIP = buildExtensionZip(path.join(HERE, 'extension'));
 const CORS_ORIGINS = (env.CORS_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
 
 const manifest = () => ({
@@ -144,6 +148,10 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === 'GET' && route === '/manifest') return send(res, 200, manifest());
     if (req.method === 'GET' && (route === '/' || route === '/index.html')) return send(res, 200, PAGE, 'text/html; charset=utf-8');
+    if (req.method === 'GET' && route === '/extension.zip') {
+      res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="pinso-capture.zip"', 'Cache-Control': 'no-store' });
+      return res.end(EXTENSION_ZIP);
+    }
     if (req.method === 'GET' && route === '/health') return send(res, 200, { ok: true, installed: !!readAppToken() });
 
     if (req.method === 'POST' && route === '/register') {

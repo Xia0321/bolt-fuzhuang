@@ -6,6 +6,7 @@ RUN npm ci --omit=dev --no-audit --no-fund
 RUN npm install -g @anthropic-ai/claude-code@2.1.283 --no-audit --no-fund
 COPY *.mjs ./
 COPY public ./public
+COPY extension ./extension
 ENV NODE_ENV=production DATA_DIR=/data
 EXPOSE 8200
 CMD ["node", "server.mjs"]
