@@ -1,0 +1,362 @@
+diff --git a/src/app/api/auth/register/route.ts b/src/app/api/auth/register/route.ts
+index a922bf1..cf1337c 100644
+--- a/src/app/api/auth/register/route.ts
++++ b/src/app/api/auth/register/route.ts
+@@ -1,5 +1,6 @@
+ import { NextRequest, NextResponse } from "next/server";
+-import { rejectIfRateLimited } from "@/lib/auth/auth-rate-limit";
++import { getClientIp, rejectIfRateLimited } from "@/lib/auth/auth-rate-limit";
++import { getGraphqlLanguageCode } from "@/config/locale";
+ import { isAllowedRedirectUrl } from "@/lib/auth/validate-redirect-url";
+ import { executeRawGraphQL, asValidationError, getUserMessage } from "@/lib/graphql";
+ 
+@@ -26,6 +27,76 @@ interface RegisterRequest {
+ 	lastName?: string;
+ 	channel: string;
+ 	redirectUrl: string;
++	/** Storefront locale slug — confirmation email language (PINSO account service). */
++	locale?: string;
++	captchaToken?: string | null;
++}
++
++/**
++ * PINSO: registration goes through the account service (deploy/account-gw) when
++ * `ACCOUNT_GW_URL` is set — it verifies Cloudflare Turnstile, applies per-IP and
++ * site-wide sign-up limits and replaces unconfirmed duplicate accounts before
++ * calling `accountRegister`. Without it (local dev) Paper registers directly.
++ */
++const ACCOUNT_GW_URL = process.env.ACCOUNT_GW_URL?.replace(/\/$/, "");
++
++type GatewayResponse = { ok?: boolean; code?: string; message?: string };
++
++const GATEWAY_ERROR_CODES: Record<string, string> = {
++	EMAIL_EXISTS: "UNIQUE",
++	INVALID_EMAIL: "INVALID",
++};
++
++/** Sign-up form settings: Turnstile site key and whether registration is open. */
++export async function GET() {
++	if (!ACCOUNT_GW_URL) {
++		return NextResponse.json({ captchaSiteKey: "", registerEnabled: true });
++	}
++	try {
++		const response = await fetch(`${ACCOUNT_GW_URL}/api/config`, { cache: "no-store" });
++		const config = (await response.json()) as { captchaSiteKey?: string; registerEnabled?: boolean };
++		return NextResponse.json(
++			{ captchaSiteKey: config.captchaSiteKey ?? "", registerEnabled: Boolean(config.registerEnabled) },
++			{ headers: { "Cache-Control": "no-store" } },
++		);
++	} catch (error) {
++		console.error("Account service unavailable:", error);
++		return NextResponse.json({ captchaSiteKey: "", registerEnabled: false }, { status: 503 });
++	}
++}
++
++async function registerViaGateway(request: NextRequest, body: RegisterRequest) {
++	let response: Response;
++	try {
++		response = await fetch(`${ACCOUNT_GW_URL}/api/register`, {
++			method: "POST",
++			cache: "no-store",
++			headers: { "Content-Type": "application/json", "X-Real-IP": getClientIp(request) },
++			body: JSON.stringify({
++				email: body.email,
++				password: body.password,
++				captchaToken: body.captchaToken ?? "",
++				channel: body.channel,
++				redirectUrl: body.redirectUrl,
++				...(body.locale ? { languageCode: getGraphqlLanguageCode(body.locale) } : {}),
++			}),
++		});
++	} catch (error) {
++		console.error("Account service unavailable:", error);
++		return NextResponse.json({ errors: [{ message: "Service unavailable", code: "NETWORK" }] }, { status: 503 });
++	}
++
++	const result = (await response.json().catch(() => ({}))) as GatewayResponse;
++	if (!response.ok || !result.ok) {
++		const code = result.code ?? "UNKNOWN";
++		return NextResponse.json(
++			{ errors: [{ message: result.message ?? code, code: GATEWAY_ERROR_CODES[code] ?? code }] },
++			{ status: response.status >= 400 ? response.status : 400 },
++		);
++	}
++	return NextResponse.json({
++		message: "Account created successfully. Please check your email to verify your account.",
++	});
+ }
+ 
+ interface AccountRegisterResult {
+@@ -76,6 +147,10 @@ export async function POST(request: NextRequest) {
+ 		);
+ 	}
+ 
++	if (ACCOUNT_GW_URL) {
++		return registerViaGateway(request, body);
++	}
++
+ 	const result = await executeRawGraphQL<AccountRegisterResult>({
+ 		query: REGISTER_MUTATION,
+ 		variables: {
+diff --git a/src/ui/components/sign-up-form.tsx b/src/ui/components/sign-up-form.tsx
+index e24e5e2..2b34f34 100644
+--- a/src/ui/components/sign-up-form.tsx
++++ b/src/ui/components/sign-up-form.tsx
+@@ -1,6 +1,6 @@
+ "use client";
+ 
+-import { useState } from "react";
++import { useEffect, useState } from "react";
+ import Link from "next/link";
+ import { useParams } from "next/navigation";
+ import { useTranslations } from "next-intl";
+@@ -11,6 +11,10 @@ import { Label } from "@/ui/components/ui/label";
+ import { buildAccountConfirmationRedirectUrl } from "@/lib/auth/account-confirmation-url";
+ import { buildStorefrontPath } from "@/lib/storefront-path";
+ import { cn } from "@/lib/utils";
++import { Turnstile } from "@/ui/components/turnstile";
++
++/** Registration settings from the PINSO account service (`GET /api/auth/register`). */
++type RegisterConfig = { captchaSiteKey: string; registerEnabled: boolean };
+ 
+ export function SignUpForm() {
+ 	const t = useTranslations("account");
+@@ -25,6 +29,24 @@ export function SignUpForm() {
+ 	const [isSubmitting, setIsSubmitting] = useState(false);
+ 	const [error, setError] = useState("");
+ 	const [success, setSuccess] = useState(false);
++	const [config, setConfig] = useState<RegisterConfig | null>(null);
++	const [captchaToken, setCaptchaToken] = useState<string | null>(null);
++	const [captchaResetKey, setCaptchaResetKey] = useState(0);
++
++	useEffect(() => {
++		let cancelled = false;
++		fetch("/api/auth/register")
++			.then((response) => response.json() as Promise<RegisterConfig>)
++			.then((data) => {
++				if (!cancelled) setConfig(data);
++			})
++			.catch(() => {
++				if (!cancelled) setConfig({ captchaSiteKey: "", registerEnabled: true });
++			});
++		return () => {
++			cancelled = true;
++		};
++	}, []);
+ 
+ 	const validateEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+ 
+@@ -47,7 +69,13 @@ export function SignUpForm() {
+ 			return;
+ 		}
+ 
++		if (config?.captchaSiteKey && !captchaToken) {
++			setError(t("errors.captchaRequired"));
++			return;
++		}
++
+ 		setIsSubmitting(true);
++		let failed = true;
+ 
+ 		try {
+ 			const response = await fetch("/api/auth/register", {
+@@ -59,6 +87,8 @@ export function SignUpForm() {
+ 					firstName,
+ 					lastName,
+ 					channel: params.channel,
++					locale: params.locale,
++					captchaToken,
+ 					redirectUrl: buildAccountConfirmationRedirectUrl(
+ 						window.location.origin,
+ 						params.locale,
+@@ -76,17 +106,28 @@ export function SignUpForm() {
+ 				const err = data.errors[0];
+ 				if (err.code === "UNIQUE") {
+ 					setError(t("errors.accountExists"));
++				} else if (err.code === "RATE_LIMITED") {
++					setError(t("errors.signupRateLimited"));
++				} else if (err.code === "CAPTCHA_FAILED") {
++					setError(t("errors.captchaFailed"));
++				} else if (err.code === "INVALID_PASSWORD") {
++					setError(t("errors.passwordTooWeak"));
++				} else if (err.code === "DISABLED") {
++					setError(t("signup.disabled"));
+ 				} else {
+ 					setError(t("errors.createAccountFailed"));
+ 				}
+ 				return;
+ 			}
+ 
++			failed = false;
+ 			setSuccess(true);
+ 		} catch {
+ 			setError(t("errors.generic"));
+ 		} finally {
+ 			setIsSubmitting(false);
++			// Turnstile tokens are single-use — get a fresh one for the next attempt
++			if (failed) setCaptchaResetKey((key) => key + 1);
+ 		}
+ 	};
+ 
+@@ -120,6 +161,17 @@ export function SignUpForm() {
+ 		);
+ 	}
+ 
++	if (config && !config.registerEnabled) {
++		return (
++			<div className="mx-auto mt-16 w-full max-w-md">
++				<div className="rounded-lg border border-border bg-card p-8 text-center shadow-sm">
++					<h1 className="text-balance text-h1">{t("signup.title")}</h1>
++					<p className="mt-4 text-sm text-muted-foreground">{t("signup.disabled")}</p>
++				</div>
++			</div>
++		);
++	}
++
+ 	return (
+ 		<div className="mx-auto mt-16 w-full max-w-md">
+ 			<div className="rounded-lg border border-border bg-card p-8 shadow-sm">
+@@ -250,19 +302,29 @@ export function SignUpForm() {
+ 						)}
+ 					</div>
+ 
+-					<Button type="submit" disabled={isSubmitting} className="h-12 w-full text-base font-semibold">
++					{config?.captchaSiteKey ? (
++						<Turnstile
++							siteKey={config.captchaSiteKey}
++							locale={params.locale}
++							onToken={setCaptchaToken}
++							resetKey={captchaResetKey}
++							loadFailedMessage={t("errors.captchaLoadFailed")}
++						/>
++					) : null}
++
++					<Button type="submit" disabled={isSubmitting || !config} className="h-12 w-full text-base font-semibold">
+ 						{isSubmitting ? t("signup.submitting") : t("signup.submit")}
+ 					</Button>
+ 
+ 					<p className="text-center text-xs text-muted-foreground">
+ 						{t.rich("signup.terms", {
+ 							terms: (chunks) => (
+-								<Link href="#" className="underline hover:no-underline">
++								<Link href={buildStorefrontPath(params.locale, params.channel, "/pages/terms")} className="underline hover:no-underline">
+ 									{chunks}
+ 								</Link>
+ 							),
+ 							privacy: (chunks) => (
+-								<Link href="#" className="underline hover:no-underline">
++								<Link href={buildStorefrontPath(params.locale, params.channel, "/pages/privacy")} className="underline hover:no-underline">
+ 									{chunks}
+ 								</Link>
+ 							),
+diff --git a/src/ui/components/turnstile.tsx b/src/ui/components/turnstile.tsx
+new file mode 100644
+index 0000000..c215717
+--- /dev/null
++++ b/src/ui/components/turnstile.tsx
+@@ -0,0 +1,105 @@
++"use client";
++
++import { useEffect, useRef, useState } from "react";
++
++/**
++ * Cloudflare Turnstile widget (PINSO). Tokens are single-use — bump `resetKey`
++ * after a failed submit to get a fresh challenge.
++ */
++interface TurnstileApi {
++	render: (el: HTMLElement, options: Record<string, unknown>) => string;
++	reset: (widgetId: string) => void;
++	remove: (widgetId: string) => void;
++}
++
++declare global {
++	interface Window {
++		turnstile?: TurnstileApi;
++	}
++}
++
++const SCRIPT_URL = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
++
++/** Turnstile widget language per storefront locale slug. */
++const WIDGET_LANGUAGES: Record<string, string> = { zh: "zh-cn", en: "en", ja: "ja" };
++
++let scriptPromise: Promise<TurnstileApi> | null = null;
++
++function loadTurnstile(): Promise<TurnstileApi> {
++	scriptPromise ??= new Promise<TurnstileApi>((resolve, reject) => {
++		const script = document.createElement("script");
++		script.src = SCRIPT_URL;
++		script.async = true;
++		script.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error("turnstile")));
++		script.onerror = () => {
++			scriptPromise = null;
++			script.remove();
++			reject(new Error("turnstile"));
++		};
++		document.head.appendChild(script);
++	});
++	return scriptPromise;
++}
++
++export function Turnstile({
++	siteKey,
++	locale,
++	onToken,
++	resetKey,
++	loadFailedMessage,
++}: {
++	siteKey: string;
++	locale: string;
++	onToken: (token: string | null) => void;
++	resetKey: number;
++	loadFailedMessage: string;
++}) {
++	const ref = useRef<HTMLDivElement>(null);
++	const widgetRef = useRef<string | null>(null);
++	const onTokenRef = useRef(onToken);
++	const [failed, setFailed] = useState(false);
++
++	useEffect(() => {
++		onTokenRef.current = onToken;
++	}, [onToken]);
++
++	useEffect(() => {
++		let cancelled = false;
++		loadTurnstile()
++			.then((turnstile) => {
++				if (cancelled || !ref.current) return;
++				widgetRef.current = turnstile.render(ref.current, {
++					sitekey: siteKey,
++					language: WIDGET_LANGUAGES[locale] ?? "auto",
++					theme: "light",
++					callback: (token: string) => onTokenRef.current(token),
++					"expired-callback": () => onTokenRef.current(null),
++					"error-callback": () => onTokenRef.current(null),
++				});
++			})
++			.catch(() => {
++				if (!cancelled) setFailed(true);
++			});
++		return () => {
++			cancelled = true;
++			if (widgetRef.current) window.turnstile?.remove(widgetRef.current);
++			widgetRef.current = null;
++		};
++	}, [siteKey, locale]);
++
++	useEffect(() => {
++		if (resetKey && widgetRef.current) {
++			window.turnstile?.reset(widgetRef.current);
++			onTokenRef.current(null);
++		}
++	}, [resetKey]);
++
++	if (failed) {
++		return (
++			<p role="alert" className="text-sm text-destructive">
++				{loadFailedMessage}
++			</p>
++		);
++	}
++	return <div ref={ref} className="min-h-[65px]" />;
++}

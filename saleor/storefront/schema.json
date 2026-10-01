@@ -1,0 +1,368 @@
+{
+  "_comment": "从 Saleor Paper 的 config/saleor/storefront-content.snapshot.json 复制（升级前台版本时同步）",
+  "contentAttributes": [
+    {
+      "name": "Free shipping threshold",
+      "slug": "free-shipping-threshold",
+      "inputType": "NUMERIC"
+    },
+    {
+      "name": "Returns window days",
+      "slug": "returns-window-days",
+      "inputType": "NUMERIC"
+    },
+    {
+      "name": "Announcement ID",
+      "slug": "announcement-id",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Announcement message",
+      "slug": "announcement-message",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Announcement href",
+      "slug": "announcement-href",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Announcement link label",
+      "slug": "announcement-link-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Announcement dismissible",
+      "slug": "announcement-dismissible",
+      "inputType": "BOOLEAN"
+    },
+    {
+      "name": "Nav all products label",
+      "slug": "nav-all-products-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Nav view all label",
+      "slug": "nav-view-all-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Listing title",
+      "slug": "listing-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Listing description",
+      "slug": "listing-description",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Hero eyebrow",
+      "slug": "hero-eyebrow",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Hero heading",
+      "slug": "hero-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Hero subheading",
+      "slug": "hero-subheading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Hero CTA label",
+      "slug": "hero-cta-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Hero image",
+      "slug": "hero-image",
+      "inputType": "FILE"
+    },
+    {
+      "name": "Featured heading",
+      "slug": "featured-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Featured collection",
+      "slug": "featured-collection",
+      "inputType": "SINGLE_REFERENCE",
+      "entityType": "COLLECTION"
+    },
+    {
+      "name": "Featured limit",
+      "slug": "featured-limit",
+      "inputType": "NUMERIC"
+    },
+    {
+      "name": "Categories heading",
+      "slug": "categories-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Categories eyebrow",
+      "slug": "categories-eyebrow",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Brand story heading",
+      "slug": "brand-story-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Brand story paragraph 1",
+      "slug": "brand-story-paragraph-1",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Brand story paragraph 2",
+      "slug": "brand-story-paragraph-2",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values heading",
+      "slug": "values-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values columns desktop",
+      "slug": "values-columns-desktop",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 1 title",
+      "slug": "values-column-1-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 1 text",
+      "slug": "values-column-1-text",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 2 title",
+      "slug": "values-column-2-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 2 text",
+      "slug": "values-column-2-text",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 3 title",
+      "slug": "values-column-3-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Values column 3 text",
+      "slug": "values-column-3-text",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Editorial heading",
+      "slug": "editorial-heading",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Editorial paragraph 1",
+      "slug": "editorial-paragraph-1",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Editorial image position",
+      "slug": "editorial-image-position",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Editorial CTA label",
+      "slug": "editorial-cta-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Photo credits",
+      "slug": "photo-credits",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty title",
+      "slug": "empty-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty body",
+      "slug": "empty-body",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty CTA label",
+      "slug": "empty-cta-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Trust free shipping prefix",
+      "slug": "trust-free-shipping-prefix",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Trust returns label",
+      "slug": "trust-returns-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Drawer title",
+      "slug": "drawer-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Drawer add for free shipping",
+      "slug": "drawer-add-for-free-shipping",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Drawer free shipping qualified",
+      "slug": "drawer-free-shipping-qualified",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty cart title",
+      "slug": "empty-cart-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty cart body",
+      "slug": "empty-cart-body",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty cart start label",
+      "slug": "empty-cart-start-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty cart go back label",
+      "slug": "empty-cart-go-back-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty session title",
+      "slug": "empty-session-title",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Empty session message",
+      "slug": "empty-session-message",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Marketing opt-in label",
+      "slug": "marketing-opt-in-label",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Trust secure checkout",
+      "slug": "trust-secure-checkout",
+      "inputType": "PLAIN_TEXT"
+    },
+    {
+      "name": "Trust Stripe processor",
+      "slug": "trust-stripe-processor",
+      "inputType": "PLAIN_TEXT"
+    }
+  ],
+  "modelTypes": [
+    {
+      "name": "Storefront — Policies",
+      "slug": "storefront-policies",
+      "attributes": [
+        "Free shipping threshold",
+        "Returns window days"
+      ]
+    },
+    {
+      "name": "Storefront — Chrome",
+      "slug": "storefront-chrome",
+      "attributes": [
+        "Announcement ID",
+        "Announcement message",
+        "Announcement href",
+        "Announcement link label",
+        "Announcement dismissible",
+        "Nav all products label",
+        "Nav view all label"
+      ]
+    },
+    {
+      "name": "Storefront — Products",
+      "slug": "storefront-products",
+      "attributes": [
+        "Listing title",
+        "Listing description"
+      ]
+    },
+    {
+      "name": "Storefront — Homepage",
+      "slug": "storefront-homepage",
+      "attributes": [
+        "Hero eyebrow",
+        "Hero heading",
+        "Hero subheading",
+        "Hero CTA label",
+        "Hero image",
+        "Featured heading",
+        "Featured collection",
+        "Featured limit",
+        "Categories heading",
+        "Categories eyebrow",
+        "Brand story heading",
+        "Brand story paragraph 1",
+        "Brand story paragraph 2",
+        "Values heading",
+        "Values columns desktop",
+        "Values column 1 title",
+        "Values column 1 text",
+        "Values column 2 title",
+        "Values column 2 text",
+        "Values column 3 title",
+        "Values column 3 text",
+        "Editorial heading",
+        "Editorial paragraph 1",
+        "Editorial image position",
+        "Editorial CTA label",
+        "Photo credits"
+      ]
+    },
+    {
+      "name": "Storefront — Cart",
+      "slug": "storefront-cart",
+      "attributes": [
+        "Empty title",
+        "Empty body",
+        "Empty CTA label",
+        "Trust free shipping prefix",
+        "Trust returns label",
+        "Drawer title",
+        "Drawer add for free shipping",
+        "Drawer free shipping qualified"
+      ]
+    },
+    {
+      "name": "Storefront — Checkout",
+      "slug": "storefront-checkout",
+      "attributes": [
+        "Empty cart title",
+        "Empty cart body",
+        "Empty cart start label",
+        "Empty cart go back label",
+        "Empty session title",
+        "Empty session message",
+        "Marketing opt-in label",
+        "Trust secure checkout",
+        "Trust Stripe processor"
+      ]
+    }
+  ]
+}

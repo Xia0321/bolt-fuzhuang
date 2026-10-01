@@ -1,0 +1,895 @@
+diff --git a/messages/en.json b/messages/en.json
+index 94a1cf3..37c1838 100644
+--- a/messages/en.json
++++ b/messages/en.json
+@@ -246,7 +246,12 @@
+ 			"updateAddressFailed": "Failed to update address",
+ 			"deleteAddressFailed": "Failed to delete address",
+ 			"setDefaultAddressFailed": "Failed to set default address",
+-			"deleteAccountFailed": "Failed to request account deletion"
++			"deleteAccountFailed": "Failed to request account deletion",
++			"captchaRequired": "Please complete the verification first",
++			"captchaFailed": "Verification failed. Please try again.",
++			"captchaLoadFailed": "The verification couldn't load. Check your network and refresh the page.",
++			"signupRateLimited": "Too many sign-up attempts. Please try again later.",
++			"passwordTooWeak": "This password is too simple. Use a longer password that isn't easy to guess."
+ 		},
+ 		"login": {
+ 			"title": "Welcome Back",
+@@ -269,7 +274,8 @@
+ 			"goToSignIn": "Go to Sign In",
+ 			"terms": "By creating an account, you agree to our <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>.",
+ 			"termsLink": "Terms of Service",
+-			"privacyLink": "Privacy Policy"
++			"privacyLink": "Privacy Policy",
++			"disabled": "Registration is not open yet. Please check back later or contact us."
+ 		},
+ 		"setPassword": {
+ 			"title": "Set New Password",
+@@ -455,7 +461,8 @@
+ 			"itemUnavailableRemoveFailed": "Could not remove this item. Try again.",
+ 			"fulfillmentCheckFailed": "Could not verify item availability. Please try again.",
+ 			"crashTitle": "Checkout error",
+-			"crashMessage": "Something went wrong loading checkout. Please try again."
++			"crashMessage": "Something went wrong loading checkout. Please try again.",
++			"fieldRequired": "{field} is required"
+ 		},
+ 		"contact": {
+ 			"title": "Contact",
+@@ -491,7 +498,10 @@
+ 			"shipTo": "Ship to",
+ 			"method": "Method",
+ 			"delivery": "Delivery",
+-			"digital": "Digital"
++			"digital": "Digital",
++			"trustSecure": "Secure checkout",
++			"trustReturns": "Easy returns",
++			"free": "Free"
+ 		},
+ 		"promo": {
+ 			"placeholder": "Discount code",
+@@ -508,7 +518,8 @@
+ 			"selectCountry": "Select country",
+ 			"backToSavedAddresses": "← Back to saved addresses",
+ 			"emptySavedShipping": "You don't have any saved addresses yet. Please enter your shipping address below.",
+-			"selectShippingAddressSheet": "Select shipping address"
++			"selectShippingAddressSheet": "Select shipping address",
++			"deliveryDays": "{min}–{max} business days"
+ 		},
+ 		"billing": {
+ 			"title": "Billing address",
+@@ -522,7 +533,9 @@
+ 			"setDefaultShipping": "Set as my default shipping address",
+ 			"setDefaultBilling": "Set as my default billing address",
+ 			"defaultBadge": "Default",
+-			"emptySaved": "You don't have any saved addresses yet."
++			"emptySaved": "You don't have any saved addresses yet.",
++			"optional": "(optional)",
++			"selectPlaceholder": "Select {label}"
+ 		},
+ 		"payment": {
+ 			"totalUpdatedTitle": "Your order total was updated",
+@@ -631,5 +644,10 @@
+ 			"paymentWebhookFailed": "Payment app webhook failed. In Saleor Dashboard → Apps → Dummy Payment App, check webhook deliveries are succeeding.",
+ 			"paymentInitFailed": "Payment could not be initialized. Check that the payment app is running in Saleor."
+ 		}
++	},
++	"footer": {
++		"tagline": "Poetry Woven in Fabric",
++		"privacy": "Privacy Policy",
++		"terms": "Terms of Service"
+ 	}
+ }
+diff --git a/messages/ja.json b/messages/ja.json
+index c8be825..77abfff 100644
+--- a/messages/ja.json
++++ b/messages/ja.json
+@@ -246,7 +246,12 @@
+ 			"updateAddressFailed": "住所の更新に失敗しました",
+ 			"deleteAddressFailed": "住所の削除に失敗しました",
+ 			"setDefaultAddressFailed": "既定の住所の設定に失敗しました",
+-			"deleteAccountFailed": "アカウント削除のリクエストに失敗しました"
++			"deleteAccountFailed": "アカウント削除のリクエストに失敗しました",
++			"captchaRequired": "先に認証を完了してください",
++			"captchaFailed": "認証に失敗しました。もう一度お試しください。",
++			"captchaLoadFailed": "認証を読み込めませんでした。ネットワークを確認してページを再読み込みしてください。",
++			"signupRateLimited": "登録の試行回数が多すぎます。しばらくしてからもう一度お試しください。",
++			"passwordTooWeak": "パスワードが単純すぎます。推測されにくい、より長いパスワードを使用してください。"
+ 		},
+ 		"login": {
+ 			"title": "おかえりなさい",
+@@ -269,7 +274,8 @@
+ 			"goToSignIn": "サインインへ",
+ 			"terms": "アカウントを作成すると、<terms>利用規約</terms>および<privacy>プライバシーポリシー</privacy>に同意したものとみなされます。",
+ 			"termsLink": "利用規約",
+-			"privacyLink": "プライバシーポリシー"
++			"privacyLink": "プライバシーポリシー",
++			"disabled": "現在、会員登録は受け付けていません。後ほどお試しいただくか、お問い合わせください。"
+ 		},
+ 		"setPassword": {
+ 			"title": "新しいパスワードを設定",
+@@ -455,7 +461,8 @@
+ 			"itemUnavailableRemoveFailed": "Could not remove this item. Try again.",
+ 			"fulfillmentCheckFailed": "Could not verify item availability. Please try again.",
+ 			"crashTitle": "チェックアウトエラー",
+-			"crashMessage": "チェックアウトの読み込み中に問題が発生しました。もう一度お試しください。"
++			"crashMessage": "チェックアウトの読み込み中に問題が発生しました。もう一度お試しください。",
++			"fieldRequired": "{field}を入力してください"
+ 		},
+ 		"contact": {
+ 			"title": "連絡先",
+@@ -488,7 +495,10 @@
+ 			"shipTo": "お届け先",
+ 			"method": "方法",
+ 			"delivery": "配送",
+-			"digital": "デジタル"
++			"digital": "デジタル",
++			"trustSecure": "安全な決済",
++			"trustReturns": "かんたん返品",
++			"free": "無料"
+ 		},
+ 		"promo": {
+ 			"placeholder": "割引コード",
+@@ -505,7 +515,8 @@
+ 			"selectCountry": "国を選択",
+ 			"backToSavedAddresses": "← 保存済み住所に戻る",
+ 			"emptySavedShipping": "保存済みの住所はまだありません。下に配送先住所を入力してください。",
+-			"selectShippingAddressSheet": "配送先住所を選択"
++			"selectShippingAddressSheet": "配送先住所を選択",
++			"deliveryDays": "{min}〜{max}営業日"
+ 		},
+ 		"billing": {
+ 			"title": "請求先住所",
+@@ -519,7 +530,9 @@
+ 			"setDefaultShipping": "既定の配送先住所に設定",
+ 			"setDefaultBilling": "既定の請求先住所に設定",
+ 			"defaultBadge": "既定",
+-			"emptySaved": "保存済みの住所はまだありません。"
++			"emptySaved": "保存済みの住所はまだありません。",
++			"optional": "（任意）",
++			"selectPlaceholder": "{label}を選択"
+ 		},
+ 		"payment": {
+ 			"totalUpdatedTitle": "注文合計が更新されました",
+@@ -629,5 +642,10 @@
+ 			"paymentWebhookFailed": "決済アプリのWebhookが失敗しました。Saleorダッシュボード → Apps → Dummy Payment App でWebhook配信が成功しているか確認してください。",
+ 			"paymentInitFailed": "支払いを初期化できませんでした。Saleorで決済アプリが稼働しているか確認してください。"
+ 		}
++	},
++	"footer": {
++		"tagline": "織物が紡ぐ詩",
++		"privacy": "プライバシーポリシー",
++		"terms": "利用規約"
+ 	}
+ }
+diff --git a/messages/zh.json b/messages/zh.json
+new file mode 100644
+index 0000000..f766c44
+--- /dev/null
++++ b/messages/zh.json
+@@ -0,0 +1,653 @@
++{
++	"cart": {
++		"drawer": {
++			"itemCount": "{count, plural, other {# 件商品}}",
++			"subtotal": "小计",
++			"shipping": "运费",
++			"shippingFree": "免运费",
++			"shippingCalculated": "结算时计算",
++			"total": "合计",
++			"checkout": "去结算",
++			"continueShopping": "继续购物",
++			"removeItem": "移除 {product}",
++			"decreaseQuantity": "减少数量",
++			"increaseQuantity": "增加数量"
++		},
++		"page": {
++			"title": "购物袋",
++			"quantity": "数量：{count}",
++			"variant": "规格：{name}",
++			"yourTotal": "合计",
++			"shippingNote": "运费将在下一步计算",
++			"checkout": "去结算"
++		}
++	},
++	"productsListing": {
++		"breadcrumbHome": "首页",
++		"breadcrumbProducts": "全部商品"
++	},
++	"common": {
++		"pagination": {
++			"previous": "上一页",
++			"next": "下一页"
++		}
++	},
++	"pdp": {
++		"addToBag": "加入购物袋",
++		"adding": "正在加入…",
++		"outOfStock": "已售罄",
++		"selectOptions": "请选择规格",
++		"buyBox": {
++			"overBudgetHint": "该商品规格过多，无法在此列出。请打开具体规格的链接购买。",
++			"externalHint": "该商品的规格需在专门页面中选择。请打开具体规格的链接购买。",
++			"selectedSummary": "已选规格"
++		},
++		"free": "免费",
++		"breadcrumbHome": "首页",
++		"badges": {
++			"sale": "特惠",
++			"new": "新品",
++			"bestseller": "热卖"
++		},
++		"variant": {
++			"outOfStockTitle": "{name} - 已售罄",
++			"willChangeSelections": "{name} - 将更改其他已选项",
++			"percentOffTitle": "{name} - 立减 {percent}%",
++			"outOfStockA11y": "已售罄",
++			"percentOffA11y": "立减 {percent}%",
++			"selectedA11y": "已选择",
++			"chooseOption": "选择{label}",
++			"searchOptions": "搜索{label}",
++			"noMatchingOptions": "没有匹配的选项"
++		},
++		"attributes": {
++			"description": "商品描述",
++			"productDetails": "商品详情",
++			"careInstructions": "洗涤保养",
++			"shippingReturns": "配送与退换",
++			"shippingBody": "订单满 {freeShippingThreshold} 免运费，标准配送 3–5 个工作日送达。",
++			"returnsBody": "购买后 {returnsWindowDays} 天内免费退货，商品需未穿着且吊牌完好。",
++			"yes": "是",
++			"no": "否"
++		},
++		"zoom": {
++			"title": "{productName} — 大图",
++			"imageAlt": "{productName} — 第 {index} 张图",
++			"close": "关闭大图",
++			"previous": "上一张",
++			"next": "下一张",
++			"counter": "{current} / {total}"
++		}
++	},
++	"plp": {
++		"quickAdd": "快速加购",
++		"filtersButton": "筛选",
++		"filterLabels": {
++			"category": "分类",
++			"color": "颜色",
++			"size": "尺码",
++			"price": "价格",
++			"priceRange": "价格区间"
++		},
++		"sort": "排序",
++		"sortOptions": {
++			"featured": "推荐",
++			"newest": "最新上架",
++			"price_asc": "价格从低到高",
++			"price_desc": "价格从高到低",
++			"bestselling": "销量最高"
++		},
++		"resultCount": "{count, plural, other {# 件商品}}",
++		"clearAllFilters": "清除全部筛选（{count}）",
++		"clearAll": "全部清除",
++		"removeFilter": "移除筛选：{value}",
++		"noMatchingFilters": "没有符合筛选条件的商品。"
++	},
++	"search": {
++		"title": "搜索",
++		"description": "在全部商品中搜索。",
++		"bar": {
++			"placeholder": "搜索商品…",
++			"srOnlyLabel": "搜索商品"
++		},
++		"resultsFor": "“{query}”的搜索结果",
++		"resultCount": "{count, plural, other {找到 # 件商品}}",
++		"noResultsTitle": "没有找到“{query}”相关的商品",
++		"noResultsBody": "没有找到符合搜索条件的商品。请换个关键词，或浏览商品分类。",
++		"browseAllProducts": "浏览全部商品",
++		"goToHomepage": "返回首页",
++		"noImage": "暂无图片",
++		"sort": "排序",
++		"sortOptions": {
++			"relevance": "相关度",
++			"price-asc": "价格从低到高",
++			"price-desc": "价格从高到低",
++			"name": "名称",
++			"newest": "最新上架"
++		}
++	},
++	"nav": {
++		"header": {
++			"mainAriaLabel": "主导航"
++		},
++		"breadcrumbAriaLabel": "面包屑导航",
++		"cartButton": "{count, plural, other {购物袋中有 # 件商品，查看购物袋}}",
++		"mobileMenu": {
++			"open": "打开菜单",
++			"title": "导航菜单"
++		},
++		"userMenu": {
++			"open": "打开账号菜单",
++			"login": "登录",
++			"myAccount": "我的账号",
++			"myOrders": "我的订单",
++			"logOut": "退出登录",
++			"unavailableAriaLabel": "账号暂不可用",
++			"unavailableTitle": "无法加载账号"
++		},
++		"regionPicker": {
++			"ariaLabel": "语言与币种",
++			"languageTitle": "语言",
++			"languageDescription": "页面文字与格式",
++			"marketTitle": "币种",
++			"marketDescription": "币种、税费与配送"
++		}
++	},
++	"account": {
++		"metadata": {
++			"loginTitle": "登录",
++			"loginDescription": "登录账号，查看订单和已保存的地址。",
++			"signupTitle": "注册账号",
++			"signupDescription": "注册新账号，保存收货地址和订单记录。",
++			"accountTitle": "我的账号"
++		},
++		"fields": {
++			"email": "邮箱",
++			"emailAddress": "邮箱地址",
++			"password": "密码",
++			"firstName": "名",
++			"lastName": "姓",
++			"confirmPassword": "确认密码",
++			"currentPassword": "当前密码",
++			"newPassword": "新密码",
++			"confirmNewPassword": "确认新密码",
++			"name": "姓名",
++			"companyOptional": "公司（选填）",
++			"streetAddress": "详细地址",
++			"streetAddress2Optional": "门牌号、楼层等（选填）",
++			"city": "城市",
++			"postalCode": "邮政编码",
++			"stateProvince": "省 / 州",
++			"countryCode": "国家代码",
++			"phoneOptional": "电话（选填）",
++			"country": "国家/地区",
++			"cityArea": "区县",
++			"localized": {
++				"province": "省份",
++				"district": "区县",
++				"state": "州",
++				"zip": "邮政编码",
++				"postal": "邮政编码",
++				"postTown": "邮政城镇",
++				"prefecture": "都道府县"
++			}
++		},
++		"placeholders": {
++			"email": "you@example.com",
++			"password": "请输入密码",
++			"firstName": "名",
++			"lastName": "姓",
++			"newPasswordMin": "至少 8 个字符…",
++			"confirmPassword": "请再次输入密码",
++			"reenterPassword": "请再次输入密码",
++			"countryCode": "CN"
++		},
++		"common": {
++			"cancel": "取消",
++			"save": "保存",
++			"saving": "正在保存…",
++			"edit": "编辑",
++			"delete": "删除",
++			"updated": "已更新",
++			"showPassword": "显示密码",
++			"hidePassword": "隐藏密码",
++			"free": "免费",
++			"qty": "数量：{count}",
++			"itemCount": "{count, plural, other {# 件商品}}",
++			"notSet": "未设置",
++			"change": "修改",
++			"changing": "正在修改…",
++			"sending": "正在发送…"
++		},
++		"errors": {
++			"invalidEmail": "请输入有效的邮箱地址",
++			"invalidEmailFirst": "请先输入有效的邮箱地址",
++			"passwordRequired": "请输入密码",
++			"passwordMinLength": "密码至少 8 个字符",
++			"passwordsMismatch": "两次输入的密码不一致",
++			"newPasswordRequired": "请输入新密码",
++			"generic": "出错了，请重试。",
++			"signInFailed": "登录失败，请重试。",
++			"invalidCredentials": "邮箱或密码错误，请重试。",
++			"rateLimited": "登录尝试次数过多，请稍后再试。",
++			"resetLinkFailed": "重置链接发送失败",
++			"accountExists": "该邮箱已注册，请直接登录。",
++			"createAccountFailed": "注册失败",
++			"invalidResetToken": "密码重置链接已过期，请重新申请。",
++			"setPasswordFailed": "设置密码失败",
++			"invalidConfirmToken": "确认链接已过期或已被使用。请尝试登录，或重新注册。",
++			"confirmFailed": "账号确认失败",
++			"loadOrdersFailed": "订单加载失败，请稍后重试。",
++			"loadOrderFailed": "订单加载失败，请重试。",
++			"loadRecentOrdersFailed": "最近订单加载失败。",
++			"updateProfileFailed": "资料更新失败",
++			"changePasswordFailed": "密码修改失败",
++			"createAddressFailed": "地址添加失败",
++			"updateAddressFailed": "地址更新失败",
++			"deleteAddressFailed": "地址删除失败",
++			"setDefaultAddressFailed": "设置默认地址失败",
++			"deleteAccountFailed": "申请注销账号失败",
++			"captchaRequired": "请先完成人机验证",
++			"captchaFailed": "人机验证未通过，请重试。",
++			"captchaLoadFailed": "人机验证加载失败，请检查网络后刷新页面。",
++			"signupRateLimited": "注册尝试次数过多，请稍后再试。",
++			"passwordTooWeak": "密码过于简单，请使用更长、不易被猜到的密码。"
++		},
++		"login": {
++			"title": "欢迎回来",
++			"noAccount": "还没有账号？",
++			"signUp": "注册",
++			"forgotPassword": "忘记密码？",
++			"resendResetLink": "重新发送重置链接",
++			"submit": "登录",
++			"submitting": "正在登录…",
++			"resetSent": "如果 {email} 已注册，密码重置链接已发送到该邮箱。注意：每 15 分钟只能申请一次。"
++		},
++		"signup": {
++			"title": "注册账号",
++			"hasAccount": "已有账号？",
++			"signIn": "登录",
++			"submit": "注册",
++			"submitting": "正在注册…",
++			"successTitle": "注册成功！",
++			"successBody": "请查收邮件，点击其中的链接确认账号。",
++			"goToSignIn": "去登录",
++			"terms": "注册即表示你同意我们的<terms>服务条款</terms>和<privacy>隐私政策</privacy>。",
++			"termsLink": "服务条款",
++			"privacyLink": "隐私政策",
++			"disabled": "注册暂未开放，请稍后再来或联系我们。"
++		},
++		"setPassword": {
++			"title": "设置新密码",
++			"subtitle": "为 {email} 设置新密码",
++			"submit": "更新密码",
++			"submitting": "正在更新…",
++			"backToSignIn": "返回登录",
++			"successTitle": "密码已更新！",
++			"successBody": "密码已重置成功，你已登录。",
++			"redirecting": "正在返回商店…"
++		},
++		"confirm": {
++			"successTitle": "账号已确认",
++			"successBody": "{email} 的账号已激活。",
++			"signIn": "登录",
++			"continueShopping": "继续购物",
++			"errorTitle": "账号确认失败",
++			"goToSignIn": "去登录",
++			"title": "确认账号",
++			"body": "请输入 {email} 的密码，完成账号确认。",
++			"submit": "确认账号",
++			"submitting": "正在确认…",
++			"tryAgain": "重试"
++		},
++		"nav": {
++			"ariaLabel": "账号",
++			"backToStore": "返回商店",
++			"signOut": "退出登录",
++			"overview": "概览",
++			"orders": "订单",
++			"addresses": "地址簿",
++			"settings": "账号设置"
++		},
++		"overview": {
++			"welcome": "欢迎回来，{name}",
++			"subtitle": "这里是你的账号概览。",
++			"recentOrders": "最近订单",
++			"viewAll": "查看全部",
++			"noOrdersYet": "你还没有下过订单。"
++		},
++		"orders": {
++			"title": "订单",
++			"count": "{count, plural, =0 {暂无订单} other {共 # 个订单}}",
++			"empty": "你还没有下过订单。",
++			"loadMore": "加载更多订单",
++			"signInRequired": "登录后查看订单。",
++			"orderNumber": "ORD-{number}"
++		},
++		"orderDetail": {
++			"placedOn": "下单时间：{date}",
++			"items": "商品（{count}）",
++			"subtotal": "小计",
++			"shipping": "运费",
++			"tax": "税费",
++			"total": "合计",
++			"shippingAddress": "收货地址",
++			"billingAddress": "账单地址",
++			"paymentMethod": "支付方式",
++			"paid": "已支付",
++			"needHelp": "需要帮助？",
++			"signInRequired": "登录后查看该订单。",
++			"loadFailed": "订单加载失败，请重试。",
++			"timeline": "订单进度"
++		},
++		"orderStatus": {
++			"UNFULFILLED": "处理中",
++			"UNCONFIRMED": "待确认",
++			"PARTIALLY_FULFILLED": "部分发货",
++			"FULFILLED": "已发货"
++		},
++		"fulfillment": {
++			"orderConfirmed": "订单已确认",
++			"orderConfirmedDescription": "已确认付款并下单",
++			"FULFILLED": "已发货",
++			"FULFILLEDDescription": "你的订单已发货",
++			"CANCELED": "发货已取消",
++			"CANCELEDDescription": "该批发货已取消",
++			"REFUNDED": "已退款",
++			"REFUNDEDDescription": "款项已退回",
++			"REFUNDED_AND_RETURNED": "已退货退款",
++			"REFUNDED_AND_RETURNEDDescription": "商品已退回并退款",
++			"REPLACED": "已换货",
++			"REPLACEDDescription": "商品已换货",
++			"RETURNED": "已退货",
++			"RETURNEDDescription": "商品已退回",
++			"WAITING_FOR_APPROVAL": "等待审核",
++			"WAITING_FOR_APPROVALDescription": "发货正在等待审核",
++			"trackingUpdated": "物流信息已更新",
++			"trackingNumber": "物流单号：{number}",
++			"descriptionWithItems": "{description}（{count, plural, other {# 件商品}}）"
++		},
++		"settings": {
++			"title": "账号设置",
++			"subtitle": "管理你的账号设置",
++			"memberSince": "注册时间：{date}"
++		},
++		"addresses": {
++			"title": "地址簿",
++			"subtitle": "管理已保存的地址",
++			"empty": "还没有保存的地址。",
++			"addAddress": "添加地址",
++			"editAddress": "编辑地址",
++			"addNewAddress": "添加新地址",
++			"editAddressDescription": "修改地址信息",
++			"addAddressDescription": "为账号添加新地址",
++			"editAddressAria": "编辑地址",
++			"updateAddress": "更新地址",
++			"deleteAddressAria": "删除地址",
++			"defaultShipping": "默认收货地址",
++			"defaultBilling": "默认账单地址",
++			"makeDefaultShipping": "设为默认收货地址",
++			"makeDefaultBilling": "设为默认账单地址"
++		},
++		"deleteAccount": {
++			"title": "注销账号",
++			"description": "永久删除你的账号及所有相关数据。",
++			"submit": "注销账号",
++			"confirm": "确定注销我的账号",
++			"confirmBody": "此操作无法撤销。注销前我们会向你发送确认邮件。",
++			"emailSent": "确认邮件已发送，请查收邮件完成账号注销。"
++		},
++		"changePassword": {
++			"submit": "修改密码"
++		},
++		"unavailable": {
++			"title": "无法加载你的账号",
++			"body": "商店暂时无法访问，请刷新页面或稍后再试。"
++		}
++	},
++	"checkout": {
++		"steps": {
++			"information": "联系信息",
++			"shipping": "配送",
++			"payment": "支付",
++			"stepsAriaLabel": "结算步骤",
++			"secureCheckout": "安全结算",
++			"complete": "完成",
++			"stepOf": "第 {step} 步，共 {total} 步"
++		},
++		"actions": {
++			"saving": "正在保存…",
++			"loading": "正在加载…",
++			"continueToShipping": "继续选择配送",
++			"continueToPayment": "继续支付",
++			"continue": "继续",
++			"continueAsGuest": "以游客身份继续",
++			"preparingGuestCart": "正在准备游客购物袋…",
++			"logIn": "登录",
++			"returnToInformation": "返回联系信息",
++			"returnToShipping": "返回配送",
++			"payNow": "立即支付",
++			"payTotal": "支付 {total}",
++			"completeOrder": "完成下单",
++			"placingOrder": "正在下单…",
++			"creatingOrder": "正在创建订单…",
++			"processingPayment": "正在处理支付…",
++			"continueShopping": "继续购物",
++			"tryAgain": "重试"
++		},
++		"errors": {
++			"sessionExpiredTitle": "结算已过期",
++			"sessionExpiredMessage": "该购物袋已失效，请重新加入商品后结算。",
++			"loadFailedTitle": "无法加载结算页",
++			"loadFailedMessage": "购物袋加载出错，请重试，或回到商店重新结算。",
++			"orderNotFoundTitle": "未找到订单",
++			"orderNotFoundMessage": "找不到该订单，可能已被删除或链接无效。",
++			"emailRequired": "请填写邮箱",
++			"selectShippingAddress": "请选择收货地址",
++			"selectShippingMethod": "请选择配送方式",
++			"updateShippingMethodFailed": "配送方式更新失败",
++			"orphanedCartMessage": "该购物袋仍关联着已登录的账号。如需以游客身份结算，请用相同商品新建一个游客购物袋，或直接登录。",
++			"orphanedCartBlocked": "该购物袋仍关联着已登录的账号。请在上方以游客身份继续，或登录。",
++			"discountApplyFailed": "该优惠码无法使用。",
++			"discountRemoveFailed": "优惠码移除失败。",
++			"invalidValue": "填写内容无效",
++			"updateEmailFailed": "邮箱更新失败",
++			"createAccountFailed": "注册失败",
++			"updateAddressFailed": "地址更新失败",
++			"itemUnavailableTitle": "有商品无法配送",
++			"itemUnavailableMessage": "该商品无法配送到你填写的地址，请更换收货地址。",
++			"itemUnavailableRemoveMessage": "该商品无法配送到你填写的地址。请移除该商品后继续，或更换收货地址。",
++			"itemUnavailableRemove": "移除商品",
++			"itemUnavailableRemoveFailed": "商品移除失败，请重试。",
++			"fulfillmentCheckFailed": "无法确认商品是否可配送，请重试。",
++			"crashTitle": "结算出错",
++			"crashMessage": "结算页加载出错，请重试。",
++			"fieldRequired": "请填写{field}"
++		},
++		"contact": {
++			"title": "联系信息",
++			"haveAccount": "已有账号？",
++			"createAccountLabel": "同时注册账号，下次结算更快捷",
++			"activationNotice": "下单后你会收到一封激活邮件，激活账号后才能登录。",
++			"guestCheckout": "游客结算",
++			"newCustomer": "新顾客？",
++			"signInTitle": "登录",
++			"resetPasswordTitle": "重置密码",
++			"resetPasswordSubtitle": "为你的账号设置新密码",
++			"processing": "正在处理…",
++			"passwordMinPlaceholder": "密码（至少 8 个字符）",
++			"signedIn": "已登录"
++		},
++		"summary": {
++			"title": "订单摘要",
++			"show": "展开",
++			"hide": "收起",
++			"toggleOrderSummary": "{action}订单摘要",
++			"itemCount": "{count, plural, other {# 件商品}}",
++			"subtotal": "小计",
++			"shipping": "运费",
++			"taxVat": "税费（增值税）",
++			"discount": "优惠",
++			"total": "合计",
++			"includingVat": "含增值税",
++			"productFallback": "商品",
++			"soldOut": "已售罄",
++			"unavailableHint": "有商品无法配送",
++			"removeItem": "移除",
++			"contact": "联系信息",
++			"shipTo": "收货地址",
++			"method": "配送方式",
++			"delivery": "配送",
++			"digital": "数字商品",
++			"trustSecure": "安全结算",
++			"trustReturns": "无忧退换",
++			"free": "免费"
++		},
++		"promo": {
++			"placeholder": "优惠码",
++			"apply": "使用",
++			"applying": "正在使用…",
++			"removeAriaLabel": "移除优惠码"
++		},
++		"shipping": {
++			"methodTitle": "配送方式",
++			"loadingMethods": "正在加载配送方式…",
++			"noAddressYet": "请先返回填写收货地址。",
++			"addressTitle": "收货地址",
++			"countryRegion": "国家/地区",
++			"selectCountry": "选择国家/地区",
++			"backToSavedAddresses": "← 返回已保存的地址",
++			"emptySavedShipping": "你还没有保存的地址，请在下方填写收货地址。",
++			"selectShippingAddressSheet": "选择收货地址",
++			"deliveryDays": "{min}–{max} 个工作日"
++		},
++		"billing": {
++			"title": "账单地址",
++			"sameAsShipping": "与收货地址相同",
++			"selectBillingSheet": "选择账单地址",
++			"emptySavedBilling": "没有可用的已保存地址。",
++			"backToSavedAddresses": "返回已保存的地址"
++		},
++		"addresses": {
++			"selectPrompt": "选择地址",
++			"setDefaultShipping": "设为我的默认收货地址",
++			"setDefaultBilling": "设为我的默认账单地址",
++			"defaultBadge": "默认",
++			"emptySaved": "你还没有保存的地址。",
++			"optional": "（选填）",
++			"selectPlaceholder": "请选择{label}"
++		},
++		"payment": {
++			"totalUpdatedTitle": "订单金额已更新",
++			"totalUpdatedBody": "合计由 {previous} 变为 {next}，请核对更新后的订单摘要再完成支付。",
++			"deliveryInvalidTitle": "配送方式已不可用",
++			"deliveryInvalidBody": "请返回配送步骤，重新选择可用的配送方式后再下单。",
++			"completingTitle": "正在处理你的订单",
++			"completingBody": "正在确认付款并创建订单，通常只需几秒钟，请不要关闭或刷新页面。",
++			"initFailed": "支付系统初始化失败。",
++			"unavailable": "支付系统暂不可用，请重试。",
++			"loadingGateway": "正在加载 {gateway} 支付表单…",
++			"confirmingPayment": "正在确认付款…",
++			"securingWithStripe": "正在通过 Stripe 安全处理付款，通常只需几秒钟。",
++			"doNotClose": "请不要关闭或刷新页面。",
++			"completeOrderFailed": "下单失败，请重试。",
++			"placeOrderFailed": "下单失败，请重试或联系客服。",
++			"totalsRefreshFailed": "结算金额刷新失败，请重试。",
++			"totalUnavailable": "无法获取结算金额，请刷新页面后重试。",
++			"currencyUnavailable": "无法获取结算币种，请刷新页面后重试。",
++			"validationFailed": "支付校验失败",
++			"methodRequired": "无法确定所选的支付方式，请重新选择后再试。",
++			"detailsUnavailable": "无法获取支付信息，请重试。",
++			"expressReset": "快捷支付按钮在确认付款前被重置，请重试。",
++			"formReset": "支付表单在确认银行卡前被重置，请不要刷新页面，直接再次点击支付。",
++			"totalChanged": "订单金额已变化，请核对后重试。",
++			"bankDeclined": "银行拒绝了这笔付款，请重试或换一张卡。",
++			"sessionExpired": "跳转后支付会话已过期，请重试。",
++			"channelUnresolved": "付款后无法确定结算渠道，请联系客服。",
++			"unexpectedError": "完成付款时发生意外错误。",
++			"stripeConfigFailed": "Stripe 支付配置有误",
++			"stripeKeyMissing": "缺少 Stripe 公钥，请在 Saleor 后台检查 Stripe 应用配置。",
++			"dummyGateway": "测试支付",
++			"failed": "支付失败",
++			"interruptedBeforeCharge": "付款在扣款前被中断，可以放心重试。",
++			"interruptedAfterAuthorize": "付款已成功，但订单尚未创建。请不要重复付款，点击下方「完成下单」即可。",
++			"verificationUnavailable": "无法确认上一次付款结果，请刷新页面。确认之前请不要再次付款。",
++			"authorizedTitle": "付款已授权，请完成下单",
++			"authorizedBody": "付款已授权（发货时才会实际扣款）。点击下方完成下单，不会重复扣款。",
++			"freeOrderBody": "订单合计为 {total}，无需付款，点击下方确认即可下单。",
++			"dummyTestMode": "测试模式：无需填写银行卡，点击支付即可完成测试订单。",
++			"stripeLoadTitle": "无法加载 Stripe"
++		},
++		"confirmation": {
++			"orderNumber": "订单号 #{number}",
++			"thankYou": "感谢你的订购！",
++			"statusTitle": "订单状态",
++			"confirmedTitle": "订单已确认",
++			"publicTitle": "你的订单",
++			"publicBody": "此处显示订单商品与金额。确认下单时使用的邮箱后，可查看收货地址和物流信息。",
++			"confirmedEmail": "确认邮件将发送至 {email}",
++			"emailSent": "确认邮件已发送",
++			"shippingAddress": "收货地址",
++			"billingAddress": "账单城市",
++			"shippingMethod": "配送方式",
++			"deliveryDays": "{days} 天",
++			"tracking": "物流信息",
++			"createAccount": "注册账号，保存这笔订单",
++			"signIn": "登录查看完整订单信息"
++		},
++		"orderFind": {
++			"title": "查询订单",
++			"body": "请输入邮件中的订单号和下单时使用的邮箱。",
++			"emailGateBody": "确认下单时使用的邮箱后，可查看收货地址和物流信息。",
++			"emailLabel": "邮箱",
++			"emailPlaceholder": "you@example.com",
++			"numberLabel": "订单号",
++			"numberPlaceholder": "订单号",
++			"confirmEmail": "查看订单详情",
++			"submit": "查询订单",
++			"findAnother": "查询其他订单",
++			"generic": "没有找到符合这些信息的订单。",
++			"rateLimited": "尝试次数过多，请稍后再试。",
++			"lookupUnavailable": "请使用确认邮件中的链接，或带上订单号联系客服。"
++		},
++		"server": {
++			"marketingSaveFailed": "营销邮件偏好保存失败",
++			"invalidRedirectUrl": "跳转地址无效，详情见服务器日志。",
++			"createAccountFailed": "注册失败",
++			"noSaleorResponse": "商店服务无响应",
++			"shippingMethodsFailed": "配送方式加载失败",
++			"gatewayInitFailed": "支付网关初始化失败",
++			"totalVerifyFailed": "无法核对结算金额，请重试。",
++			"totalChanged": "结算金额已变化，请核对订单后重试。",
++			"paymentInitFailed": "支付初始化失败",
++			"paymentsDisabled": "当前环境未开通支付。",
++			"paymentProcessFailed": "支付处理失败",
++			"completeOrderFailed": "下单失败",
++			"orderCreateFailed": "付款已完成但订单创建失败，请重试或联系客服。",
++			"validationRulesUnavailable": "无法获取校验规则",
++			"setDefaultAddressFailed": "设置默认地址失败",
++			"dummyNotAllowed": "当前环境不支持测试支付。",
++			"stripeNotEnabled": "当前环境未开通 Stripe 支付。请在前台设置 NEXT_PUBLIC_ENABLE_STRIPE_PAYMENTS=true。"
++		},
++		"gateways": {
++			"noneTitle": "未配置支付方式",
++			"noneBody": "要收款，请在 Saleor 后台安装支付应用（测试可用 Saleor Dummy Payment，正式环境可用 Stripe/Adyen）。",
++			"unsupportedTitle": "不支持的支付方式",
++			"unsupportedList": "本结算页不支持当前可用的支付方式：{gateways}。",
++			"unsupportedEmpty": "本次结算没有可用的支付方式。",
++			"dummyMissingTitle": "本次结算无法使用测试支付",
++			"dummyMissingBody": "已安装 Dummy Payment 应用，但本次结算不可用。请在 Saleor 后台检查该应用已启用、Webhook 投递正常，并确认支持结算币种（官方托管版只支持 USD）。",
++			"noGatewayConfigured": "未配置支付方式，请联系客服或在 Saleor 中配置支付应用。",
++			"stripeUseCardForm": "Stripe 支付请使用银行卡表单，在上方 Stripe 支付区域完成付款。",
++			"paymentFailed": "支付失败",
++			"paymentTryAgain": "支付失败，请重试。",
++			"paymentWebhookFailed": "支付应用 Webhook 调用失败。请在 Saleor 后台 → 应用 → Dummy Payment App 中检查 Webhook 投递情况。",
++			"paymentInitFailed": "支付初始化失败，请检查 Saleor 中的支付应用是否正常运行。"
++		}
++	},
++	"footer": {
++		"tagline": "以织物书写的诗意",
++		"privacy": "隐私政策",
++		"terms": "服务条款"
++	}
++}
+diff --git a/src/config/locale.ts b/src/config/locale.ts
+index 7cefe8d..dde7fb7 100644
+--- a/src/config/locale.ts
++++ b/src/config/locale.ts
+@@ -74,6 +74,13 @@ export const LOCALE_DEFINITIONS = {
+ 		htmlLang: "ko",
+ 		ogLocale: "ko_KR",
+ 	},
++	/** Simplified Chinese — Saleor stores Dashboard translations under `ZH_HANS`. */
++	zh: {
++		bcp47: "zh-CN",
++		graphqlLanguageCode: "ZH_HANS",
++		htmlLang: "zh-Hans",
++		ogLocale: "zh_CN",
++	},
+ } as const satisfies Record<string, LocaleDefinition>;
+ 
+ function parseEnvLocaleList(raw: string | undefined): LocaleSlug[] | null {
+diff --git a/src/graphql/LocaleSlugTranslations.graphql b/src/graphql/LocaleSlugTranslations.graphql
+index 18a4d5e..0334249 100644
+--- a/src/graphql/LocaleSlugTranslations.graphql
++++ b/src/graphql/LocaleSlugTranslations.graphql
+@@ -29,6 +29,9 @@ fragment ProductLocaleSlugTranslations on Product {
+ 	slugKO: translation(languageCode: KO) {
+ 		slug
+ 	}
++	slugZH_HANS: translation(languageCode: ZH_HANS) {
++		slug
++	}
+ }
+ 
+ fragment CategoryLocaleSlugTranslations on Category {
+@@ -56,6 +59,9 @@ fragment CategoryLocaleSlugTranslations on Category {
+ 	slugKO: translation(languageCode: KO) {
+ 		slug
+ 	}
++	slugZH_HANS: translation(languageCode: ZH_HANS) {
++		slug
++	}
+ }
+ 
+ fragment CollectionLocaleSlugTranslations on Collection {
+@@ -83,6 +89,9 @@ fragment CollectionLocaleSlugTranslations on Collection {
+ 	slugKO: translation(languageCode: KO) {
+ 		slug
+ 	}
++	slugZH_HANS: translation(languageCode: ZH_HANS) {
++		slug
++	}
+ }
+ 
+ fragment PageLocaleSlugTranslations on Page {
+@@ -110,4 +119,7 @@ fragment PageLocaleSlugTranslations on Page {
+ 	slugKO: translation(languageCode: KO) {
+ 		slug
+ 	}
++	slugZH_HANS: translation(languageCode: ZH_HANS) {
++		slug
++	}
+ }
+diff --git a/src/lib/catalog/locale-slugs.ts b/src/lib/catalog/locale-slugs.ts
+index 798032d..c6b4779 100644
+--- a/src/lib/catalog/locale-slugs.ts
++++ b/src/lib/catalog/locale-slugs.ts
+@@ -16,6 +16,7 @@ export type LocaleSlugTranslationFields = {
+ 	slugNB?: { slug?: string | null } | null;
+ 	slugJA?: { slug?: string | null } | null;
+ 	slugKO?: { slug?: string | null } | null;
++	slugZH_HANS?: { slug?: string | null } | null;
+ };
+ 
+ function slugAliasForLocale(locale: LocaleSlug): keyof LocaleSlugTranslationFields {

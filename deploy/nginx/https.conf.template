@@ -4,6 +4,12 @@ upstream saleor_api {
     keepalive 16;
 }
 
+# 商城前台（Saleor Paper，deploy/docker-compose.yml 中的 storefront 服务）
+upstream storefront {
+    server 127.0.0.1:3000;
+    keepalive 16;
+}
+
 # 80 端口：保留证书验证路径，其余全部 301 跳转到 https://主域名
 server {
     listen 80 default_server;

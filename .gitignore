@@ -21,3 +21,6 @@ dist-ssr
 *.sln
 *.sw?
 .env
+
+# 本地部署时打包的前台（deploy/deploy.sh）
+storefront-dist

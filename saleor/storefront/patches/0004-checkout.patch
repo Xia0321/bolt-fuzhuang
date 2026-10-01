@@ -1,0 +1,575 @@
+diff --git a/src/app/(checkout)/actions.ts b/src/app/(checkout)/actions.ts
+index 560b830..5f5c3a9 100644
+--- a/src/app/(checkout)/actions.ts
++++ b/src/app/(checkout)/actions.ts
+@@ -3,6 +3,7 @@
+ import { after } from "next/server";
+ import {
+ 	AddressValidationRulesDocument,
++	CheckoutPaymentCreateDocument,
+ 	CheckoutAddPromoCodeDocument,
+ 	CheckoutBillingAddressUpdateDocument,
+ 	CheckoutCompleteDocument,
+@@ -23,6 +24,8 @@ import {
+ 	UserSetDefaultAddressDocument,
+ 	type AddressValidationRulesQuery,
+ 	type AddressValidationRulesQueryVariables,
++	type CheckoutPaymentCreateMutation,
++	type CheckoutPaymentCreateMutationVariables,
+ 	type CheckoutAddPromoCodeMutation,
+ 	type CheckoutAddPromoCodeMutationVariables,
+ 	type CheckoutBillingAddressUpdateMutation,
+@@ -150,6 +153,11 @@ const paymentGatewaysInitializeDocument = toTypedDocument<
+ 	PaymentGatewaysInitializeMutationVariables
+ >(PaymentGatewaysInitializeDocument);
+ 
++const checkoutPaymentCreateDocument = toTypedDocument<
++	CheckoutPaymentCreateMutation,
++	CheckoutPaymentCreateMutationVariables
++>(CheckoutPaymentCreateDocument);
++
+ const transactionInitializeDocument = toTypedDocument<
+ 	TransactionInitializeMutation,
+ 	TransactionInitializeMutationVariables
+@@ -396,7 +404,7 @@ export async function detachCheckoutCustomer(checkoutId: string): Promise<void>
+ 
+ export async function calculateDeliveryOptions(checkoutId: string): Promise<DeliveryOptionsActionResult> {
+ 	const result = await executeAuthenticatedGraphQL(deliveryOptionsCalculateDocument, {
+-		variables: { id: checkoutId },
++		variables: { id: checkoutId, languageCode: await checkoutGraphqlLanguageCode() },
+ 		cache: "no-cache",
+ 	});
+ 
+@@ -486,6 +494,45 @@ export async function initializePaymentGateways(
+ 	return { ok: true, data: payload };
+ }
+ 
++/**
++ * PINSO: pay with Saleor's built-in dummy payment plugin (`mirumee.payments.dummy`, Payment API).
++ * The amount is always the live checkout total; only allowed where dummy payment is enabled.
++ */
++export async function createLegacyCheckoutPayment(input: {
++	checkoutId: string;
++	gatewayId: string;
++}): Promise<SimpleActionResult> {
++	const { server: t } = await getCheckoutServerTranslations();
++
++	if (input.gatewayId !== "mirumee.payments.dummy" || getDummyPaymentGuardError(input.gatewayId)) {
++		return { ok: false, error: t("dummyNotAllowed") };
++	}
++
++	const live = await fetchCheckoutOnServer(input.checkoutId);
++	const amount = live.ok && live.checkout ? getCheckoutPayAmount(live.checkout) : null;
++	if (amount === null) {
++		return { ok: false, error: t("totalVerifyFailed") };
++	}
++
++	const result = await executeAuthenticatedGraphQL(checkoutPaymentCreateDocument, {
++		variables: {
++			checkoutId: input.checkoutId,
++			// Dummy plugin tokens: "charged" simulates a fully charged payment
++			input: { gateway: input.gatewayId, token: "charged", amount },
++		},
++		cache: "no-cache",
++	});
++
++	if (!result.ok) {
++		return { ok: false, error: result.error.message };
++	}
++	const error = result.data.checkoutPaymentCreate?.errors[0];
++	if (error) {
++		return { ok: false, error: error.message ?? t("paymentProcessFailed") };
++	}
++	return { ok: true };
++}
++
+ export async function initializeCheckoutTransaction(
+ 	variables: TransactionInitializeMutationVariables,
+ ): Promise<TransactionInitializeActionResult> {
+diff --git a/src/app/(checkout)/checkout-transport.ts b/src/app/(checkout)/checkout-transport.ts
+index cdbbfdf..1b6dfd1 100644
+--- a/src/app/(checkout)/checkout-transport.ts
++++ b/src/app/(checkout)/checkout-transport.ts
+@@ -1,5 +1,6 @@
+ import {
+ 	attachCustomerToCheckout,
++	createLegacyCheckoutPayment,
+ 	initializeCheckoutTransaction,
+ 	initializePaymentGateways,
+ 	processCheckoutTransaction,
+@@ -21,5 +22,6 @@ export const nextCheckoutTransport: CheckoutTransport = {
+ 	initializePaymentGateways,
+ 	initializeTransaction: initializeCheckoutTransaction,
+ 	processTransaction: processCheckoutTransaction,
++	createLegacyPayment: createLegacyCheckoutPayment,
+ 	completeCheckout: runCheckoutComplete,
+ };
+diff --git a/src/app/(checkout)/city-choices-action.ts b/src/app/(checkout)/city-choices-action.ts
+new file mode 100644
+index 0000000..fd2b228
+--- /dev/null
++++ b/src/app/(checkout)/city-choices-action.ts
+@@ -0,0 +1,34 @@
++"use server";
++
++import { executeRawGraphQL } from "@/lib/graphql";
++
++/**
++ * PINSO: cities Saleor's address database knows for a country area (e.g. CN provinces).
++ * Saleor rejects a free-text city outside this list, so the checkout address form
++ * renders a dropdown whenever the list is non-empty.
++ */
++const CITY_CHOICES_QUERY = `
++  query PinsoCityChoices($countryCode: CountryCode!, $countryArea: String!) {
++    addressValidationRules(countryCode: $countryCode, countryArea: $countryArea) {
++      cityChoices { raw verbose }
++    }
++  }
++`;
++
++export type CityChoice = { value: string; label: string };
++
++export async function getCityChoices(countryCode: string, countryArea: string): Promise<CityChoice[]> {
++	if (!/^[A-Z]{2}$/.test(countryCode) || !countryArea || countryArea.length > 100) return [];
++	const result = await executeRawGraphQL<{
++		addressValidationRules: { cityChoices: Array<{ raw: string | null; verbose: string | null }> } | null;
++	}>({ query: CITY_CHOICES_QUERY, variables: { countryCode, countryArea } });
++	if (!result.ok) return [];
++	const seen = new Set<string>();
++	const choices: CityChoice[] = [];
++	for (const { raw, verbose } of result.data.addressValidationRules?.cityChoices ?? []) {
++		if (!raw || seen.has(raw)) continue;
++		seen.add(raw);
++		choices.push({ value: raw, label: verbose || raw });
++	}
++	return choices;
++}
+diff --git a/src/checkout/components/payment/billing-address-section.tsx b/src/checkout/components/payment/billing-address-section.tsx
+index 91610e1..f6f12d5 100644
+--- a/src/checkout/components/payment/billing-address-section.tsx
++++ b/src/checkout/components/payment/billing-address-section.tsx
+@@ -278,6 +278,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 										errors={errors}
+ 										onFieldChange={updateField}
+ 										countryAreaChoices={countryAreaChoices}
++										countryCode={countryCode}
+ 										idPrefix="billing-"
+ 										autocompleteSection="billing"
+ 									/>
+@@ -346,6 +347,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 								errors={errors}
+ 								onFieldChange={updateField}
+ 								countryAreaChoices={countryAreaChoices}
++								countryCode={countryCode}
+ 								idPrefix="billing-"
+ 								autocompleteSection="billing"
+ 							/>
+@@ -361,13 +363,14 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+  * Hook to get billing address validation info.
+  */
+ export const useBillingAddressValidation = (countryCode: CountryCode) => {
++	const tErrors = useTranslations("checkout.errors");
+ 	const { orderedAddressFields, getFieldLabel, isRequiredField } = useAddressFormUtils(countryCode);
+ 
+ 	const validateBillingAddress = (formData: Record<string, string>): Record<string, string> => {
+ 		const errors: Record<string, string> = {};
+ 		orderedAddressFields.forEach((field) => {
+ 			if (isRequiredField(field) && !formData[field]) {
+-				errors[field] = `${getFieldLabel(field)} is required`;
++				errors[field] = tErrors("fieldRequired", { field: getFieldLabel(field) });
+ 			}
+ 		});
+ 		return errors;
+diff --git a/src/checkout/graphql/checkout.graphql b/src/checkout/graphql/checkout.graphql
+index 7390137..e0bbdad 100644
+--- a/src/checkout/graphql/checkout.graphql
++++ b/src/checkout/graphql/checkout.graphql
+@@ -71,6 +71,9 @@ fragment CheckoutFragment on Checkout {
+ 		shippingMethod {
+ 			id
+ 			name
++			translation(languageCode: $languageCode) {
++				name
++			}
+ 		}
+ 	}
+ 	problems {
+@@ -410,13 +413,16 @@ mutation checkoutComplete($checkoutId: ID!) {
+ 	}
+ }
+ 
+-mutation deliveryOptionsCalculate($id: ID!) {
++mutation deliveryOptionsCalculate($id: ID!, $languageCode: LanguageCodeEnum!) {
+ 	deliveryOptionsCalculate(id: $id) {
+ 		deliveries {
+ 			id
+ 			shippingMethod {
+ 				id
+ 				name
++				translation(languageCode: $languageCode) {
++					name
++				}
+ 				active
+ 				price {
+ 					...Money
+diff --git a/src/checkout/graphql/payment.graphql b/src/checkout/graphql/payment.graphql
+index c102132..df4b142 100644
+--- a/src/checkout/graphql/payment.graphql
++++ b/src/checkout/graphql/payment.graphql
+@@ -59,3 +59,15 @@ mutation transactionProcess($id: ID!, $data: JSON) {
+ 		}
+ 	}
+ }
++
++# PINSO: legacy payment plugins (Saleor's built-in `mirumee.payments.dummy`) use the
++# Payment API, not transactions — create the payment, then `checkoutComplete`.
++mutation checkoutPaymentCreate($checkoutId: ID!, $input: PaymentInput!) {
++	checkoutPaymentCreate(id: $checkoutId, input: $input) {
++		errors {
++			field
++			code
++			message
++		}
++	}
++}
+diff --git a/src/checkout/lib/checkout-transport.ts b/src/checkout/lib/checkout-transport.ts
+index adade38..ff070ba 100644
+--- a/src/checkout/lib/checkout-transport.ts
++++ b/src/checkout/lib/checkout-transport.ts
+@@ -7,6 +7,7 @@ import type {
+ import type {
+ 	CheckoutActionResult,
+ 	CheckoutCompleteActionResult,
++	SimpleActionResult,
+ 	PaymentGatewaysInitializeActionResult,
+ 	TransactionInitializeActionResult,
+ 	TransactionProcessActionResult,
+@@ -41,6 +42,8 @@ export type CheckoutTransport = {
+ 	processTransaction: (
+ 		variables: TransactionProcessMutationVariables,
+ 	) => Promise<TransactionProcessActionResult>;
++	/** PINSO: `checkoutPaymentCreate` for Saleor's built-in dummy payment plugin (Payment API). */
++	createLegacyPayment?: (input: { checkoutId: string; gatewayId: string }) => Promise<SimpleActionResult>;
+ 	/** `checkoutComplete` — converts a fully-paid checkout into an order. */
+ 	completeCheckout: (checkoutId: string) => Promise<CheckoutCompleteActionResult>;
+ };
+diff --git a/src/checkout/lib/payment/providers/dummy-pay.ts b/src/checkout/lib/payment/providers/dummy-pay.ts
+index 4edce5d..b543dc6 100644
+--- a/src/checkout/lib/payment/providers/dummy-pay.ts
++++ b/src/checkout/lib/payment/providers/dummy-pay.ts
+@@ -12,6 +12,17 @@ export async function executeDummyPayment(
+ 	gatewayId: string,
+ 	messages: CheckoutGatewayMessages,
+ ): Promise<PaymentResult> {
++	// PINSO: Saleor's built-in dummy plugin is a legacy payment gateway, not a transaction app
++	const transport = getCheckoutTransport();
++	if (gatewayId === "mirumee.payments.dummy" && transport.createLegacyPayment) {
++		const paymentResult = await transport.createLegacyPayment({ checkoutId: context.checkoutId, gatewayId });
++		if (!paymentResult.ok) {
++			console.error("Payment create error:", paymentResult.error);
++			return { ok: false, error: paymentResult.error || messages.paymentTryAgain, errorKey: "payment" };
++		}
++		return completeCheckoutOrder(context.checkoutId);
++	}
++
+ 	const initResult = await getCheckoutTransport().initializeTransaction({
+ 		checkoutId: context.checkoutId,
+ 		amount: context.amount,
+diff --git a/src/checkout/lib/utils/money.ts b/src/checkout/lib/utils/money.ts
+index 650492d..ee9e193 100644
+--- a/src/checkout/lib/utils/money.ts
++++ b/src/checkout/lib/utils/money.ts
+@@ -20,19 +20,23 @@ export const getFormattedMoney = <TMoney extends Money>(money: MightNotExist<TMo
+ 	return new Intl.NumberFormat(localeConfig.default, {
+ 		style: "currency",
+ 		currency,
+-		currencyDisplay: "symbol",
++		// PINSO: "¥1,080.00" rather than "CN¥1,080.00" — checkout formats with the default locale
++		currencyDisplay: "narrowSymbol",
+ 	}).format(negative ? -amount : amount);
+ };
+ 
+ /**
+  * Format shipping price - returns "Free" for zero amount.
+  */
+-export const formatShippingPrice = <TMoney extends Money>(money: MightNotExist<TMoney>): string => {
++export const formatShippingPrice = <TMoney extends Money>(
++	money: MightNotExist<TMoney>,
++	freeLabel = "Free",
++): string => {
+ 	if (!money) {
+ 		return "—";
+ 	}
+ 	if (money.amount === 0) {
+-		return "Free";
++		return freeLabel;
+ 	}
+ 	return getFormattedMoney(money);
+ };
+diff --git a/src/checkout/views/saleor-checkout/address-form-fields.tsx b/src/checkout/views/saleor-checkout/address-form-fields.tsx
+index aedab52..e1d65db 100644
+--- a/src/checkout/views/saleor-checkout/address-form-fields.tsx
++++ b/src/checkout/views/saleor-checkout/address-form-fields.tsx
+@@ -1,10 +1,12 @@
+ "use client";
+ 
+-import { type FC, type ReactNode } from "react";
++import { type FC, type ReactNode, useEffect, useRef, useState } from "react";
++import { useTranslations } from "next-intl";
+ import { User, MapPin, Building, Phone, type LucideIcon } from "lucide-react";
+ import { Input } from "@/ui/components/ui/input";
+ import { Label } from "@/ui/components/ui/label";
+ import { cn } from "@/lib/utils";
++import { getCityChoices, type CityChoice } from "@/app/(checkout)/city-choices-action";
+ import { type AddressField } from "@/checkout/components/address-form/types";
+ import {
+ 	formatAddressAutocomplete,
+@@ -156,6 +158,8 @@ interface AddressFieldsProps {
+ 	onFieldChange: (field: string, value: string) => void;
+ 	/** Country area choices for state/province dropdown */
+ 	countryAreaChoices?: Array<{ raw?: unknown; verbose?: unknown }>;
++	/** Selected country — loads the city dropdown for countries whose cities Saleor validates (PINSO) */
++	countryCode?: string;
+ 	/** ID prefix for form fields (e.g., "billing-") */
+ 	idPrefix?: string;
+ 	/** Scopes autofill tokens for shipping vs billing address sections */
+@@ -170,9 +174,45 @@ export const AddressFields: FC<AddressFieldsProps> = ({
+ 	errors,
+ 	onFieldChange,
+ 	countryAreaChoices,
++	countryCode,
+ 	idPrefix = "",
+ 	autocompleteSection = "shipping",
+ }) => {
++	const t = useTranslations("checkout.addresses");
++	const countryArea = formData.countryArea || "";
++	// PINSO: once a province is chosen, cities Saleor validates come from its address database
++	const cityKey = countryCode && countryArea ? `${countryCode}|${countryArea}` : "";
++	const [loadedCities, setLoadedCities] = useState<{ key: string; choices: CityChoice[] }>({
++		key: "",
++		choices: [],
++	});
++	const cityChoices = cityKey && loadedCities.key === cityKey ? loadedCities.choices : [];
++
++	useEffect(() => {
++		if (!cityKey || !countryCode) return;
++		let cancelled = false;
++		void getCityChoices(countryCode, countryArea)
++			.catch(() => [])
++			.then((choices) => {
++				if (!cancelled) setLoadedCities({ key: cityKey, choices });
++			});
++		return () => {
++			cancelled = true;
++		};
++	}, [cityKey, countryCode, countryArea]);
++
++	// A city typed before the province (or from another province) is not valid for the new list
++	const city = formData.city || "";
++	const onFieldChangeRef = useRef(onFieldChange);
++	useEffect(() => {
++		onFieldChangeRef.current = onFieldChange;
++	}, [onFieldChange]);
++	useEffect(() => {
++		if (cityChoices.length && city && !cityChoices.some((choice) => choice.value === city)) {
++			onFieldChangeRef.current("city", "");
++		}
++	}, [cityChoices, city]);
++
+ 	const renderField = (field: AddressField): ReactNode => {
+ 		if (field === "countryCode") return null;
+ 
+@@ -189,10 +229,33 @@ export const AddressFields: FC<AddressFieldsProps> = ({
+ 		const fieldLabel = (
+ 			<Label htmlFor={fieldId} className="text-sm font-medium">
+ 				{label}
+-				{!isRequired && <span className="ml-1 font-normal text-muted-foreground">(optional)</span>}
++				{/* Labels such as "Company (optional)" already say so */}
++				{!isRequired && !/[)）]$/.test(label) && (
++					<span className="ml-1 font-normal text-muted-foreground">{t("optional")}</span>
++				)}
+ 			</Label>
+ 		);
+ 
++		// City dropdown (PINSO) — same markup as the province dropdown below
++		if (field === "city" && cityChoices.length) {
++			return (
++				<div key={field} className="space-y-1.5">
++					{fieldLabel}
++					<FormSelect
++						id={fieldId}
++						name={field}
++						value={city}
++						onChange={(value) => onFieldChange(field, value)}
++						error={error}
++						placeholder={t("selectPlaceholder", { label })}
++						autoComplete={autoComplete}
++						options={cityChoices}
++					/>
++					<FieldError error={error} />
++				</div>
++			);
++		}
++
+ 		// State/Province dropdown
+ 		if (field === "countryArea" && countryAreaChoices?.length) {
+ 			return (
+@@ -204,7 +267,7 @@ export const AddressFields: FC<AddressFieldsProps> = ({
+ 						value={formData[field] || ""}
+ 						onChange={(value) => onFieldChange(field, value)}
+ 						error={error}
+-						placeholder={`Select ${label.toLowerCase()}`}
++						placeholder={t("selectPlaceholder", { label })}
+ 						autoComplete={autoComplete}
+ 						options={countryAreaChoices.map(({ raw, verbose }) => ({
+ 							value: typeof raw === "string" ? raw : "",
+diff --git a/src/checkout/views/saleor-checkout/checkout-summary-context.tsx b/src/checkout/views/saleor-checkout/checkout-summary-context.tsx
+index f7c1317..87453c8 100644
+--- a/src/checkout/views/saleor-checkout/checkout-summary-context.tsx
++++ b/src/checkout/views/saleor-checkout/checkout-summary-context.tsx
+@@ -17,6 +17,7 @@ export type CheckoutSummaryLabels = {
+ 	method: string;
+ 	delivery: string;
+ 	digital: string;
++	free: string;
+ };
+ 
+ interface CheckoutSummaryContextProps {
+@@ -66,13 +67,14 @@ export function formatAddressLine(address: CheckoutFragment["shippingAddress"]):
+ }
+ 
+ /** Get shipping method display string */
+-export function formatShippingMethod(checkout: CheckoutFragment): string {
++export function formatShippingMethod(checkout: CheckoutFragment, freeLabel?: string): string {
+ 	const delivery = checkout.delivery;
+ 	if (!delivery?.shippingMethod) return "—";
+ 
+-	const priceStr = formatShippingPrice(checkout.shippingPrice?.gross);
++	const priceStr = formatShippingPrice(checkout.shippingPrice?.gross, freeLabel);
+ 
+-	return `${delivery.shippingMethod.name}${priceStr ? ` · ${priceStr}` : ""}`;
++	const name = delivery.shippingMethod.translation?.name || delivery.shippingMethod.name;
++	return `${name}${priceStr ? ` · ${priceStr}` : ""}`;
+ }
+ 
+ /** Build standard summary rows for shipping step */
+@@ -96,7 +98,7 @@ export function buildPaymentSummaryRows(
+ 	if (checkout.isShippingRequired) {
+ 		rows.push(
+ 			{ label: labels.shipTo, value: formatAddressLine(checkout.shippingAddress), onChangeStep: 1 },
+-			{ label: labels.method, value: formatShippingMethod(checkout), onChangeStep: 2 },
++			{ label: labels.method, value: formatShippingMethod(checkout, labels.free), onChangeStep: 2 },
+ 		);
+ 	} else {
+ 		rows.push({ label: labels.delivery, value: labels.digital });
+@@ -114,5 +116,6 @@ export function useCheckoutSummaryLabels(): CheckoutSummaryLabels {
+ 		method: t("method"),
+ 		delivery: t("delivery"),
+ 		digital: t("digital"),
++		free: t("free"),
+ 	};
+ }
+diff --git a/src/checkout/views/saleor-checkout/information-step.tsx b/src/checkout/views/saleor-checkout/information-step.tsx
+index 4ea2b89..dab0f13 100644
+--- a/src/checkout/views/saleor-checkout/information-step.tsx
++++ b/src/checkout/views/saleor-checkout/information-step.tsx
+@@ -307,7 +307,7 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+ 				} else {
+ 					orderedAddressFields.forEach((field) => {
+ 						if (isRequiredField(field) && !formData[field]) {
+-							newErrors[field] = `${getFieldLabel(field)} is required`;
++							newErrors[field] = tErrors("fieldRequired", { field: getFieldLabel(field) });
+ 						}
+ 					});
+ 				}
+diff --git a/src/checkout/views/saleor-checkout/order-summary.tsx b/src/checkout/views/saleor-checkout/order-summary.tsx
+index 1cdbabf..2d311ea 100644
+--- a/src/checkout/views/saleor-checkout/order-summary.tsx
++++ b/src/checkout/views/saleor-checkout/order-summary.tsx
+@@ -2,7 +2,7 @@
+ 
+ import { useEffect, useState, type FC, type FormEvent } from "react";
+ import Image from "next/image";
+-import { Tag, ShieldCheck, RotateCcw, Truck, ChevronDown, ShoppingBag, X } from "lucide-react";
++import { Tag, ShieldCheck, RotateCcw, ChevronDown, ShoppingBag, X } from "lucide-react";
+ import { Button } from "@/ui/components/ui/button";
+ import { Input } from "@/ui/components/ui/input";
+ import { cn } from "@/lib/utils";
+@@ -411,30 +411,15 @@ export const OrderSummary: FC<OrderSummaryProps> = ({
+ 					</section>
+ 
+ 					{/* Trust/Social proof */}
+-					<footer className="grid grid-cols-3 gap-2 border-t border-border bg-secondary/30 px-5 py-4">
++					{/* PINSO: localized; no blanket "free shipping" claim (it depends on the order total) */}
++					<footer className="grid grid-cols-2 gap-2 border-t border-border bg-secondary/30 px-5 py-4">
+ 						<div className="flex flex-col items-center rounded-lg bg-secondary p-2.5 text-center">
+ 							<ShieldCheck className="mb-1 h-4 w-4 text-muted-foreground" />
+-							<span className="text-[10px] leading-tight text-muted-foreground">
+-								Secure
+-								<br />
+-								checkout
+-							</span>
++							<span className="text-[10px] leading-tight text-muted-foreground">{t("trustSecure")}</span>
+ 						</div>
+ 						<div className="flex flex-col items-center rounded-lg bg-secondary p-2.5 text-center">
+ 							<RotateCcw className="mb-1 h-4 w-4 text-muted-foreground" />
+-							<span className="text-[10px] leading-tight text-muted-foreground">
+-								30-day
+-								<br />
+-								returns
+-							</span>
+-						</div>
+-						<div className="flex flex-col items-center rounded-lg bg-secondary p-2.5 text-center">
+-							<Truck className="mb-1 h-4 w-4 text-muted-foreground" />
+-							<span className="text-[10px] leading-tight text-muted-foreground">
+-								Free
+-								<br />
+-								shipping
+-							</span>
++							<span className="text-[10px] leading-tight text-muted-foreground">{t("trustReturns")}</span>
+ 						</div>
+ 					</footer>
+ 				</div>
+diff --git a/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx b/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
+index e2a4991..effe53e 100644
+--- a/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
++++ b/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
+@@ -141,6 +141,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+ 						errors={errors}
+ 						onFieldChange={onFieldChange}
+ 						countryAreaChoices={countryAreaChoices}
++						countryCode={countryCode}
+ 					/>
+ 				</>
+ 			)}
+diff --git a/src/checkout/views/saleor-checkout/shipping-step.tsx b/src/checkout/views/saleor-checkout/shipping-step.tsx
+index 49013de..df9a3e0 100644
+--- a/src/checkout/views/saleor-checkout/shipping-step.tsx
++++ b/src/checkout/views/saleor-checkout/shipping-step.tsx
+@@ -209,7 +209,7 @@ export const ShippingStep: FC<ShippingStepProps> = ({
+ 									<Icon className={cn("h-5 w-5", isEco ? "text-green-600" : "text-muted-foreground")} />
+ 									<div className="flex-1">
+ 										<div className="flex items-center gap-2">
+-											<span className="font-medium">{method.name}</span>
++											<span className="font-medium">{method.translation?.name || method.name}</span>
+ 											{isEco ? (
+ 												<span className="rounded-full bg-green-100 px-2 py-0.5 text-xs text-green-700">
+ 													Eco
+@@ -218,12 +218,15 @@ export const ShippingStep: FC<ShippingStepProps> = ({
+ 										</div>
+ 										{method.minimumDeliveryDays && method.maximumDeliveryDays ? (
+ 											<p className="text-sm text-muted-foreground">
+-												{method.minimumDeliveryDays}-{method.maximumDeliveryDays} business days
++												{t("shipping.deliveryDays", {
++													min: method.minimumDeliveryDays,
++													max: method.maximumDeliveryDays,
++												})}
+ 											</p>
+ 										) : null}
+ 									</div>
+ 									<span className={cn("font-medium", isFree && "text-green-600")}>
+-										{formatShippingPrice(method.price)}
++										{formatShippingPrice(method.price, t("summary.free"))}
+ 									</span>
+ 								</label>
+ 							);

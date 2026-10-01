@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 从本地部署：打包前台（和后台）→ 上传 → 在服务器上执行 server-deploy.sh
+# 从本地部署：打包前台（Saleor Paper）和后台 → 上传 → 在服务器上执行 server-deploy.sh
 # 日常只更新前台和服务配置时，可直接在 Jenkins 中点击构建；后台页面需要更新时用本脚本。
 #
 # 用法（在项目根目录执行）：
@@ -8,6 +8,7 @@
 # 可选环境变量：
 #   DOMAIN          主域名（首次部署后服务器会记住，之后可省略）
 #   CERTBOT_EMAIL   Let's Encrypt 账号邮箱
+#   STOREFRONT_DIR  Saleor Paper 前台源码目录，默认 ~/Desktop/saleor-storefront（不存在时按 saleor/storefront/REF 克隆）
 #   DASHBOARD_DIR   saleor-dashboard 源码目录，默认 ~/Desktop/saleor-dashboard
 #   SKIP_DASHBOARD  设为 1 时跳过后台打包，服务器保留现有后台页面
 #   REMOTE_DIR      服务器上的部署目录，默认 /opt/pinso
@@ -16,6 +17,7 @@ set -euo pipefail
 : "${SERVER:?请设置 SERVER，例如 root@47.84.72.178}"
 : "${SSH_KEY:?请设置 SSH_KEY，即私钥路径}"
 DASHBOARD_DIR="${DASHBOARD_DIR:-$HOME/Desktop/saleor-dashboard}"
+STOREFRONT_DIR="${STOREFRONT_DIR:-$HOME/Desktop/saleor-storefront}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/pinso}"
 RELEASE="$REMOTE_DIR/release"
 
@@ -24,9 +26,32 @@ SSH=(ssh -i "$SSH_KEY" -o StrictHostKeyChecking=accept-new -o SetEnv=LC_ALL=C.UT
 RSYNC=(rsync -az --delete -e "ssh -i $SSH_KEY")
 step() { printf '\n\033[1m▸ %s\033[0m\n' "$1"; }
 
-step "打包前台"
-cd "$ROOT"
-VITE_SALEOR_API_URL=/graphql/ npm run build
+step "打包前台（打补丁）"
+# 与 GitHub 打包（.github/workflows/storefront.yml）相同：固定版本的官方源码 + 本仓库补丁 + build.env
+STOREFRONT_REF="$(cat "$ROOT/saleor/storefront/REF")"
+if [ ! -d "$STOREFRONT_DIR/.git" ]; then
+  git clone https://github.com/saleor/storefront.git "$STOREFRONT_DIR"
+fi
+git -C "$STOREFRONT_DIR" fetch -q origin "$STOREFRONT_REF" 2>/dev/null || true
+[ "$(git -C "$STOREFRONT_DIR" rev-parse HEAD)" = "$STOREFRONT_REF" ] || {
+  [ -z "$(git -C "$STOREFRONT_DIR" status --porcelain)" ] || { echo "✗ $STOREFRONT_DIR 有未提交的改动，且版本不是 $STOREFRONT_REF"; exit 1; }
+  git -C "$STOREFRONT_DIR" checkout -q "$STOREFRONT_REF"
+}
+"$ROOT/saleor/storefront/apply-patches.sh" "$STOREFRONT_DIR"
+(
+  cd "$STOREFRONT_DIR"
+  export PATH="/opt/homebrew/opt/node@24/bin:$PATH" HUSKY=0
+  npx -y pnpm@10.28.1 install --frozen-lockfile
+  set -a; . "$ROOT/saleor/storefront/build.env"; set +a
+  npx -y pnpm@10.28.1 build
+)
+rm -rf "$ROOT/storefront-dist"
+cp -R "$STOREFRONT_DIR/.next/standalone" "$ROOT/storefront-dist"
+cp -R "$STOREFRONT_DIR/public" "$ROOT/storefront-dist/public"
+cp -R "$STOREFRONT_DIR/.next/static" "$ROOT/storefront-dist/.next/static"
+cp "$ROOT/saleor/storefront/build.env" "$ROOT/storefront-dist/pinso-build.env"
+printf 'commit=%s\nbuilt_at=%s\nsaleor_storefront=%s\n' "$(git -C "$ROOT" rev-parse HEAD)" \
+  "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STOREFRONT_REF" > "$ROOT/storefront-dist/pinso-version.txt"
 
 if [ "${SKIP_DASHBOARD:-0}" != "1" ]; then
   step "打包后台（打补丁、合并中文语言包）"
@@ -43,7 +68,9 @@ fi
 
 step "上传到 $SERVER:$RELEASE"
 "${SSH[@]}" "mkdir -p $RELEASE && rm -rf $RELEASE/dashboard-dist"
-"${RSYNC[@]}" "$ROOT/deploy" "$ROOT/dist" "$SERVER:$RELEASE/"
+"${SSH[@]}" "mkdir -p $RELEASE/saleor"
+"${RSYNC[@]}" "$ROOT/deploy" "$ROOT/storefront-dist" "$SERVER:$RELEASE/"
+"${RSYNC[@]}" "$ROOT/saleor/storefront" "$SERVER:$RELEASE/saleor/"
 if [ "${SKIP_DASHBOARD:-0}" != "1" ]; then
   "${RSYNC[@]}" "$DASHBOARD_DIR/build/dashboard/" "$SERVER:$RELEASE/dashboard-dist/"
 fi

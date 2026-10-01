@@ -3,7 +3,7 @@
 #
 #   - Jenkins 以 systemd 服务运行，只监听 127.0.0.1:8080，由 Nginx 在 https://<域名>/jenkins/ 反向代理
 #   - 跳过安装向导，通过 Configuration as Code 自动创建管理员账号和「发布商城前台」「发布管理后台」两个任务
-#   - jenkins 用户加入 docker 组（在容器中打包前台），并通过 sudo 规则只允许执行部署脚本
+#   - jenkins 用户加入 docker 组，并通过 sudo 规则只允许执行部署脚本
 #
 # 用法：bash setup.sh <域名>
 #   管理员账号默认 admin、密码首次随机生成，保存在 /etc/jenkins/admin.env；修改该文件后重启 jenkins 即可更换账号密码

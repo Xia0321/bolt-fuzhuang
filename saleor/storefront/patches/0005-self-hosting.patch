@@ -1,0 +1,252 @@
+diff --git a/next.config.js b/next.config.js
+index 3bdcf07..b956d1d 100644
+--- a/next.config.js
++++ b/next.config.js
+@@ -79,6 +79,10 @@ const config = {
+ 		// (max 3 concurrent requests; the inter-request delay applies at build time only)
+ 	},
+ 	images: {
++		// PINSO: self-hosted on a small server — catalog images already come pre-sized from
++		// Saleor, so `/_next/image` re-encoding is disabled with NEXT_IMAGE_UNOPTIMIZED=true
++		// (read at build time).
++		unoptimized: process.env.NEXT_IMAGE_UNOPTIMIZED === "true",
+ 		// WebP only: AVIF cold-encodes add ~500ms+ to first /_next/image hit on Vercel (hurts LCP).
+ 		formats: ["image/webp"],
+ 		remotePatterns: imageRemotePatterns,
+diff --git a/src/app/api/revalidate/route.ts b/src/app/api/revalidate/route.ts
+index eb91faf..b1cdcce 100644
+--- a/src/app/api/revalidate/route.ts
++++ b/src/app/api/revalidate/route.ts
+@@ -5,7 +5,10 @@ import { getStorefrontChannelSlugs } from "@/lib/channel-slugs";
+ import {
+ 	CACHE_PROFILES,
+ 	buildCatchAllTag,
++	buildMenuRevalidationTags,
+ 	buildTag,
++	FOOTER_MENU_SLUG,
++	NAVBAR_MENU_SLUG,
+ 	extractMenuSlugFromWebhookPayload,
+ 	extractPageSlugFromWebhookPayload,
+ 	planFullPurgeTagEntries,
+@@ -66,7 +69,40 @@ function extractCollectionSlugs(product: Record<string, unknown>): string[] | un
+ 		.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
+ }
+ 
+-function parseWebhookPayload(payload: unknown): ParsedWebhookPayload {
++/**
++ * PINSO: `TRANSLATION_CREATED` / `TRANSLATION_UPDATED` payloads wrap the translated entity
++ * (`translation { product { slug … } }`, `translation { page { slug } }`, …) — unwrap it so
++ * the entity is invalidated like a regular update of that entity.
++ */
++function unwrapTranslationPayload(payload: unknown): unknown {
++	if (!payload || typeof payload !== "object") return payload;
++	const translation = (payload as Record<string, unknown>).translation;
++	return translation && typeof translation === "object" ? translation : payload;
++}
++
++const TRANSLATION_EVENTS = new Set(["translation_created", "translation_updated"]);
++
++/**
++ * PINSO: translations that carry no slug of their owner. Menu item translations refresh
++ * both storefront menus; attribute value translations (storefront Model copy is stored as
++ * attribute values) refresh the storefront content of every channel.
++ */
++async function revalidateUnscopedTranslation(typename: unknown): Promise<string[] | null> {
++	if (typename !== "MenuItemTranslation" && typename !== "AttributeValueTranslation") return null;
++	const channels = await getStorefrontChannelSlugs();
++	if (typename === "MenuItemTranslation") {
++		return revalidateTags(
++			[NAVBAR_MENU_SLUG, FOOTER_MENU_SLUG].flatMap((slug) => buildMenuRevalidationTags(slug, channels)),
++		);
++	}
++	const plan = planStorefrontContentRevalidation("storefront-chrome", channels, DefaultChannelSlug);
++	if (plan.action !== "revalidate") return [];
++	for (const path of plan.paths) revalidatePath(path);
++	return revalidateTags(plan.tags);
++}
++
++function parseWebhookPayload(rawPayload: unknown): ParsedWebhookPayload {
++	const payload = unwrapTranslationPayload(rawPayload);
+ 	if (!payload || typeof payload !== "object") {
+ 		return { type: "unknown" };
+ 	}
+@@ -233,8 +269,9 @@ export async function POST(request: NextRequest) {
+ 	console.log("[Revalidate] Delivery:", delivery);
+ 
+ 	const eventScope = resolveWebhookEventScope(eventHeader);
++	const isTranslationEvent = TRANSLATION_EVENTS.has(eventHeader?.trim().toLowerCase() ?? "");
+ 
+-	if (eventHeader && !eventScope) {
++	if (eventHeader && !eventScope && !isTranslationEvent) {
+ 		console.log("[Revalidate] Ignoring event Paper does not act on:", delivery);
+ 		return Response.json({ paths: [], tags: [], success: true, skipped: true, reason: "unhandled_event" });
+ 	}
+@@ -246,6 +283,15 @@ export async function POST(request: NextRequest) {
+ 			console.log("[Revalidate] Raw payload:", JSON.stringify(payload, null, 2));
+ 		}
+ 
++		if (isTranslationEvent) {
++			const typename = (payload as { translation?: { __typename?: unknown } })?.translation?.__typename;
++			const revalidated = await revalidateUnscopedTranslation(typename);
++			if (revalidated) {
++				console.log("[Revalidate] Success:", { type: "translation", tags: revalidated });
++				return Response.json({ paths: [], tags: revalidated, success: true });
++			}
++		}
++
+ 		const parsed = parseWebhookPayload(payload);
+ 		const { slug, channel } = parsed;
+ 		// The header is authoritative when present; payload shape is the fallback for
+@@ -355,8 +401,16 @@ export async function POST(request: NextRequest) {
+ 			return Response.json({ paths: [], tags: revalidatedTags, success: true });
+ 		}
+ 
+-		const targetChannel = channel || DefaultChannelSlug;
+-		if (!targetChannel) {
++		// PINSO: product/category payloads are not channel-scoped in Saleor — without a channel
++		// in the payload, invalidate every storefront channel (cn / global / jp), not only the default.
++		const targetChannels = channel
++			? [channel]
++			: storefrontChannels.length > 0
++				? storefrontChannels
++				: DefaultChannelSlug
++					? [DefaultChannelSlug]
++					: [];
++		if (targetChannels.length === 0) {
+ 			return Response.json(
+ 				{ error: "Channel not specified in webhook and NEXT_PUBLIC_DEFAULT_CHANNEL not set" },
+ 				{ status: 400 },
+@@ -367,36 +421,38 @@ export async function POST(request: NextRequest) {
+ 		// would otherwise keep the grids permanently cold. Tags are sharded per surface/slug
+ 		// (see queueListingTags). No header (manual POST) is treated as listing-affecting,
+ 		// matching prior behaviour.
+-		if (eventScope?.affectsListing ?? true) {
+-			queueListingTags(type, parsed, targetChannel, tagEntries);
+-		}
++		for (const targetChannel of targetChannels) {
++			if (eventScope?.affectsListing ?? true) {
++				queueListingTags(type, parsed, targetChannel, tagEntries);
++			}
+ 
+-		switch (type) {
+-			case "product":
+-				if (slug) {
+-					queueEntityTag(CACHE_PROFILES.products, targetChannel, slug, tagEntries);
+-				}
+-				// A product event does not change category *metadata*; the category page's own
+-				// cached hero is busted by category_* events. Nothing to do for categorySlug here.
+-				break;
++			switch (type) {
++				case "product":
++					if (slug) {
++						queueEntityTag(CACHE_PROFILES.products, targetChannel, slug, tagEntries);
++					}
++					// A product event does not change category *metadata*; the category page's own
++					// cached hero is busted by category_* events. Nothing to do for categorySlug here.
++					break;
+ 
+-			case "category":
+-				if (slug) {
+-					queueEntityTag(CACHE_PROFILES.categories, targetChannel, slug, tagEntries);
+-				}
+-				break;
++				case "category":
++					if (slug) {
++						queueEntityTag(CACHE_PROFILES.categories, targetChannel, slug, tagEntries);
++					}
++					break;
+ 
+-			case "collection":
+-				if (slug) {
+-					queueEntityTag(CACHE_PROFILES.collections, targetChannel, slug, tagEntries);
+-				}
+-				break;
++				case "collection":
++					if (slug) {
++						queueEntityTag(CACHE_PROFILES.collections, targetChannel, slug, tagEntries);
++					}
++					break;
+ 
+-			default: {
+-				// Every entity is handled above; a new WebhookEntity must fail typecheck here
+-				// rather than silently fall through to a broad purge.
+-				const unhandled: never = type;
+-				throw new Error(`Unhandled webhook entity: ${String(unhandled)}`);
++				default: {
++					// Every entity is handled above; a new WebhookEntity must fail typecheck here
++					// rather than silently fall through to a broad purge.
++					const unhandled: never = type;
++					throw new Error(`Unhandled webhook entity: ${String(unhandled)}`);
++				}
+ 			}
+ 		}
+ 
+diff --git a/src/lib/content/provider.ts b/src/lib/content/provider.ts
+index d45a416..0850a4a 100644
+--- a/src/lib/content/provider.ts
++++ b/src/lib/content/provider.ts
+@@ -1,4 +1,5 @@
+ import { defaultStorefrontContent } from "@/lib/content/defaults";
++import { executeRawGraphQL } from "@/lib/graphql";
+ import { saleorContentProvider } from "@/lib/content/saleor/saleor-provider";
+ import type { ContentProviderId, StorefrontContent, StorefrontContentRequest } from "@/lib/content/types";
+ 
+@@ -40,6 +41,57 @@ export function resolveContentProvider(): ContentProvider {
+ 	}
+ }
+ 
++/**
++ * PINSO: the free-shipping threshold comes from the channel's shipping methods in Saleor
++ * (the lowest "minimum order price" among methods that cost 0), so it is configured in one
++ * place — Dashboard → Shipping — instead of being duplicated in the policies Model.
++ * No free method → `null` (free-shipping copy and progress bar are hidden).
++ * When the lookup fails, the Model / code default value is kept.
++ */
++const FREE_SHIPPING_QUERY = `
++  query PinsoFreeShippingThreshold($channel: String!) {
++    shop {
++      availableShippingMethods(channel: $channel) {
++        price { amount }
++        minimumOrderPrice { amount }
++      }
++    }
++  }
++`;
++
++type FreeShippingResult = {
++	shop: {
++		availableShippingMethods: Array<{
++			price: { amount: number } | null;
++			minimumOrderPrice: { amount: number } | null;
++		}> | null;
++	};
++};
++
++async function resolveFreeShippingThreshold(channel: string): Promise<number | null | undefined> {
++	const result = await executeRawGraphQL<FreeShippingResult>({
++		query: FREE_SHIPPING_QUERY,
++		variables: { channel },
++	});
++	if (!result.ok) return undefined;
++	const freeMethods = (result.data.shop.availableShippingMethods ?? []).filter(
++		(method) => method.price?.amount === 0,
++	);
++	if (freeMethods.length === 0) return null;
++	return Math.min(...freeMethods.map((method) => method.minimumOrderPrice?.amount ?? 0));
++}
++
+ export async function loadStorefrontContent(request: StorefrontContentRequest): Promise<StorefrontContent> {
+-	return resolveContentProvider().load(request);
++	const [content, freeShippingThreshold] = await Promise.all([
++		resolveContentProvider().load(request),
++		resolveFreeShippingThreshold(request.channel),
++	]);
++	if (freeShippingThreshold === undefined) return content;
++	return {
++		...content,
++		policies: {
++			...content.policies,
++			shipping: { ...content.policies.shipping, freeShippingThreshold },
++		},
++	};
+ }

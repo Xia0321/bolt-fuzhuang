@@ -1,50 +1,47 @@
 # PINSO Denim（品帅牛仔）独立站
 
-前台：React + Vite + Tailwind（本仓库）
+前台：Saleor 官方前台 [Paper](https://github.com/saleor/storefront)（Next.js 16）+ 本仓库的定制补丁，见 [saleor/storefront/README.md](saleor/storefront/README.md)
 后端 / 后台管理：[Saleor](https://github.com/saleor/saleor) 3.23（GraphQL API + Dashboard）
 
 ```
-浏览器 ──► 前台 (本仓库, :5173) ──GraphQL──► Saleor API (:8000) ──► PostgreSQL / Redis
-                                             ▲
-运营人员 ──► Saleor Dashboard 后台 (:9000) ───┘
+浏览器 ──► 前台 Saleor Paper (:3000，Node 服务) ──GraphQL──► Saleor API (:8000) ──► PostgreSQL / Redis
+                                                            ▲
+运营人员 ──► Saleor Dashboard 后台 (:9000) ──────────────────┘
 ```
 
 ## 目录
 
 | 路径 | 说明 |
 |---|---|
-| `src/config.ts` | API 地址、语言与 Saleor 语言代码的对应、可选币种（渠道） |
-| `src/lib/catalog.ts` | 读取商品、分类、菜单、页面内容、运费规则 |
-| `src/lib/checkout.ts` | 购物袋与结算（Saleor Checkout） |
-| `src/i18n/translations.ts` | 只放界面固定文案（按钮、提示）。内容类文案都在后台配置 |
+| `saleor/storefront/` | 前台定制补丁、打包参数、Saleor 端初始化（内容模型、缓存刷新 webhook），见 [README](saleor/storefront/README.md) |
+| `saleor/dashboard/` | 后台完整中文语言包、定制补丁及合并脚本，见 [README](saleor/dashboard/README.md) |
 | `saleor/seed/` | 初始数据导入脚本（渠道、仓库、运费、商品、页面、菜单） |
 | `saleor/local/start-api.sh` | 本地启动 Saleor API |
-| `saleor/dashboard/` | 后台完整中文语言包及合并脚本，见 [saleor/dashboard/README.md](saleor/dashboard/README.md) |
+| `deploy/` | 服务器部署：Docker Compose、Nginx、Jenkins、注册服务、商品导入扩展 |
 
 ## 后台可配置的内容
 
-前台不写死任何商品和运营内容，在 Saleor 后台修改后刷新前台即可生效。
+前台不写死任何商品和运营内容，在 Saleor 后台修改后自动刷新前台缓存（webhook）。
 
 | 前台位置 | 后台位置 |
 |---|---|
 | 商品、价格、尺码/颜色、库存、图片 | Catalog → Products（尺码和颜色是规格属性，库存按规格设置） |
 | 分类名称、描述、封面图 | Catalog → Categories |
-| 首页「精选单品」及「精选」角标 | Catalog → Collections → `featured` |
-| 顶部导航、首页分类区顺序 | Configuration → Navigation → `navbar` |
-| 页脚「品牌」栏 / 底部链接 | Navigation → `footer` / `footer-legal` |
-| 品牌名、标语、联系邮箱/电话/地址、Instagram、网站图标（Favicon） | Modeling → 页面 `site-settings` |
-| 首页大图（文字、按钮、图片） | 页面 `home-hero` |
-| 首页造型画册横幅 | 页面 `home-lookbook` |
-| 品牌故事页（横幅 + 正文） | 页面 `about` |
-| 首页「品牌承诺」、品牌故事页数据条 | 类型为 Feature 的页面，`placement` 决定位置，`sort-order` 决定顺序 |
-| 配送信息、退换政策、隐私政策、服务条款 | 页面 `shipping` / `returns` / `privacy` / `terms` |
-| 运费和免运费门槛 | Configuration → Shipping Methods → `Worldwide` |
+| 首页「精选单品」 | Catalog → Collections → `featured`（在首页模型中指定） |
+| 顶部导航 | Configuration → Navigation → `navbar`（菜单中没有的分类不显示） |
+| 页脚链接 | Navigation → `footer`（平铺的页面链接；有子项的菜单项显示为一栏） |
+| 首页大图、精选/分类/品牌承诺/品牌故事等区块文案 | 内容 → 模型 → Storefront — Homepage |
+| 顶部公告栏 | 模型 Storefront — Chrome |
+| 全部商品页标题、购物袋、结算页文案 | 模型 Storefront — Products / Cart / Checkout |
+| 退换天数 | 模型 Storefront — Policies |
+| 品牌故事、配送信息、退换政策、隐私政策、服务条款 | 页面 `about` / `shipping` / `returns` / `privacy` / `terms`（前台 `/zh/cn/pages/<slug>`） |
+| 运费和免运费门槛 | Configuration → Shipping Methods → `Worldwide`（价格为 0 的方式的最低订单金额即免运费门槛） |
 | 币种与价格 | Configuration → Channels（`cn` 人民币 / `global` 美元 / `jp` 日元） |
-| 中文 / 日文翻译 | Translations（商品、分类、页面、菜单、颜色都在这里翻译） |
+| 中文 / 日文翻译 | Translations（商品、分类、页面、菜单、模型文案、配送方式都在这里翻译） |
 
-页面、属性的 slug（如 `home-hero`、`button-link`）是前台读取时的约定，不要修改；新增 Feature 页面、菜单项、商品都不需要改代码。
+模型和页面的 slug（如 `storefront-homepage`）是前台读取时的约定，不要修改。按钮、提示等界面固定文字在前台补丁的 `messages/*.json` 中。
 
-新增币种：在后台新建渠道（并加入配送区域、给商品设置该渠道价格），再在 `src/config.ts` 的 `CHANNELS` 里加一行。
+新增币种：在后台新建渠道（并加入配送区域、给商品设置该渠道价格），再在 `saleor/storefront/build.env` 的 `STOREFRONT_CHANNELS` 里加上渠道 slug。
 
 ## 本地开发
 
@@ -66,25 +63,24 @@ saleor/dashboard/apply-patches.sh ~/Desktop/saleor-dashboard       # 打上本�
 node saleor/dashboard/apply-locale.mjs ~/Desktop/saleor-dashboard   # 合并中文语言包
 cd ~/Desktop/saleor-dashboard && pnpm install && pnpm dev   # http://localhost:9000
 
-# 4. 前台
-cp .env.example .env && npm install && npm run dev           # http://localhost:5173
+# 4. 前台：官方源码 + 本项目补丁，步骤见 saleor/storefront/README.md「本地开发」   # http://localhost:3000
 
-# 5. 顾客注册服务（需要注册功能时启动，配置见下文「顾客账号」）
-node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs   # http://localhost:8100，前台经 Vite 代理 /api 访问
+# 5. 顾客注册服务（需要注册功能时启动，配置见下文「顾客账号」），前台 .env.local 设置 ACCOUNT_GW_URL=http://127.0.0.1:8100
+node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs
 ```
 
 国内网络安装依赖慢时，可以使用镜像：PyPI 用 `--index-url https://pypi.tuna.tsinghua.edu.cn/simple`，npm/pnpm 用 `--registry=https://registry.npmmirror.com`。
 
 ## 顾客账号
 
-登录、找回密码、我的订单、地址簿都直接使用 Saleor 自带的顾客账号，后台「客户」菜单即可管理。游客仍可直接结账，订单完成页的专属链接 `/order/<订单ID>` 游客也能查看订单状态和物流单号。
+登录、找回密码、我的订单、地址簿都直接使用 Saleor 自带的顾客账号（前台 `/zh/cn/account`），后台「客户」菜单即可管理。游客仍可直接结账，订单完成页的专属链接游客也能查看订单；也可以在 `/order/find` 按订单号和邮箱查询。
 
-注册只需邮箱和密码，不做邮箱验证，但要经过注册服务 `deploy/account-gw`：
+注册经前台 `/api/auth/register` 在服务端转交注册服务 `deploy/account-gw`：
 
 - **人机验证**：Cloudflare Turnstile，服务端校验
-- **频率限制**：Nginx 每 IP 每分钟 3 次；注册服务每 IP 每小时 5 个、每天 20 个账号，全站每小时 200 个
-- **原理**：Saleor 保持「需要邮箱验证才能登录」。直接调用公开接口 `accountRegister` 注册的账号无法登录；注册服务校验通过后，用 App 令牌把账号标记为已验证
-- 登录防爆破由 Saleor 自带（按 IP 延迟），Nginx 只向 Saleor 传真实连接 IP，防止伪造 `X-Forwarded-For` 绕过
+- **频率限制**：Nginx 每 IP 每分钟 3 次；前台每 IP 每小时 5 次；注册服务每 IP 每小时 5 个、每天 20 个账号，全站每小时 200 个
+- 同一邮箱已注册但未确认时，删除旧账号后重新注册（防止他人抢注邮箱）
+- 登录、找回密码由前台服务端调用 Saleor，前台按顾客 IP 限制频率（登录每 15 分钟 10 次），Nginx 另有每 IP 每分钟 20 次的限制
 
 服务器 `/opt/pinso/.env` 需要以下变量，缺少时注册页显示「注册暂未开放」，其余功能不受影响：
 
@@ -95,9 +91,9 @@ node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs   # ht
 
 修改后在 `/opt/pinso` 执行 `docker compose -p pinso up -d account-gw` 生效。
 
-本地开发时在 `deploy/account-gw/.env.local`（不提交）中配置同样的变量，并额外设置 `SALEOR_API_URL=http://localhost:8000/graphql/`、`STOREFRONT_URL=http://localhost:5173`；Turnstile 可用官方测试密钥（站点 `1x00000000000000000000AA`，密钥 `1x0000000000000000000000000000000AA`，始终通过）。
+本地开发时在 `deploy/account-gw/.env.local`（不提交）中配置同样的变量，并额外设置 `SALEOR_API_URL=http://localhost:8000/graphql/`、`STOREFRONT_URL=http://localhost:3000`；Turnstile 可用官方测试密钥（站点 `1x00000000000000000000AA`，密钥 `1x0000000000000000000000000000000AA`，始终通过）。
 
-注册后 Saleor 会发送确认邮件，顾客点击链接（前台 `/confirm-account`）确认后才能登录；忘记密码时发送重置链接（前台 `/reset-password`）。
+注册后 Saleor 会发送确认邮件，顾客点击链接（前台登录页 `/zh/cn/login?confirm=1&…`）输入密码确认后登录；忘记密码时发送重置链接（同样指向前台登录页，带 `email`、`token` 参数时显示设置新密码）。旧版前台发出的 `/confirm-account`、`/reset-password` 链接由 Nginx 跳转到新地址。
 
 ## 邮件
 
@@ -157,10 +153,13 @@ cd /opt/pinso && docker compose -p pinso exec -T -e MAIL_TEST_TO=delivered@resen
 
 ```
 浏览器 ──HTTPS──► 宿主机 Nginx（Let's Encrypt 证书，HTTP 自动跳转 HTTPS，www 跳转主域名）
-                    ├─ /、/dashboard/、/media/ → /opt/pinso 下的静态文件
-                    └─ /graphql/、/thumbnail/  → 127.0.0.1:8000（Docker 中的 Saleor）
-Docker Compose：Saleor API、Worker、PostgreSQL、Redis（均不对公网开放）
+                    ├─ /                      → 127.0.0.1:3000（Docker 中的前台 Saleor Paper，Node 服务）
+                    ├─ /dashboard/、/media/   → /opt/pinso 下的静态文件
+                    └─ /graphql/、/thumbnail/ → 127.0.0.1:8000（Docker 中的 Saleor）
+Docker Compose：前台、Saleor API、Worker、注册服务、商品导入、PostgreSQL、Redis（均不对公网开放）
 ```
+
+前台容器使用宿主机网络，服务端渲染时经本机 Nginx 访问 `https://<域名>/graphql/`（容器内域名指向 127.0.0.1，不绕道 Cloudflare），Nginx 对来自本机的请求不限流。前台打包结果在 `/opt/pinso/storefront`。
 
 ### 日常发布：Jenkins
 
@@ -168,19 +167,20 @@ Docker Compose：Saleor API、Worker、PostgreSQL、Redis（均不对公网开�
 
 | 任务 | 发布内容 | 步骤 |
 |---|---|---|
-| 发布商城前台 | 顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件） | 安装依赖 → 打包前台 → 检查运行环境 → 更新文件与配置 → 更新后端服务 → Nginx 与证书 → 邮件与后台扩展 → 验证 |
+| 发布商城前台 | 顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件） | 等待 GitHub 打包前台 → 检查运行环境 → 更新文件与配置 → 更新后端服务 → Nginx 与证书 → 邮件与后台扩展 → 前台初始化 → 验证 |
 | 发布管理后台 | Saleor 管理后台页面（`/dashboard/`） | 检查需要的后台版本 → 等待 GitHub 打包（显示已等待时间与状态）→ 下载并校验 → 更新后台页面 |
 
-- 管理后台打包需要约 8GB 内存，服务器不够，由 GitHub Actions（`.github/workflows/dashboard.yml`）在 `saleor/dashboard/` 有改动时自动打包，发布到 Release `dashboard-latest`；「发布管理后台」等 GitHub 打包出包含最新改动的版本后再下载部署
+- 前台和管理后台打包都需要较多内存，服务器不够，由 GitHub Actions 在对应目录有改动时自动打包：前台 `.github/workflows/storefront.yml`（`saleor/storefront/` 有改动时，发布到 Release `storefront-latest`），后台 `.github/workflows/dashboard.yml`（发布到 `dashboard-latest`）。Jenkins 等 GitHub 打包出包含最新改动的版本后再下载部署（`deploy/fetch-github-build.sh`）
+- 「前台初始化」：首次部署时创建 Saleor 应用「PINSO 前台」并把令牌写入 `/opt/pinso/.env`（`STOREFRONT_APP_TOKEN`），创建缓存刷新 webhook 和首页等文案的内容模型（已存在的不覆盖），最后刷新前台全部缓存
 - 流水线定义在 `deploy/Jenkinsfile`（商城前台）与 `deploy/Jenkinsfile.dashboard`（管理后台），每个步骤调用 `deploy/server-deploy.sh` 的一个阶段
 - Jenkins 的安装与配置在 `deploy/jenkins/`（`setup.sh` 可重复执行；新增或修改任务、权限后需在服务器上重新执行）
 - Jenkins 以 systemd 服务运行，只监听 127.0.0.1:8080，内存上限 512MB；管理员密码在服务器 `/etc/jenkins/admin.env`
-- 仓库改为私有后，Jenkins 下载后台打包结果需要 GitHub 令牌
+- 仓库改为私有后，Jenkins 下载打包结果需要 GitHub 令牌
 
 ### 本地部署（首次部署，或不经 Jenkins 一次性发布全部内容）
 
 ```bash
-# 本地打包前台和后台 → 上传 → 启动 → 配置 Nginx 与证书（首次会自动申请 Let's Encrypt 证书）
+# 本地打包前台（~/Desktop/saleor-storefront，需要 Node 24）和后台 → 上传 → 启动 → 配置 Nginx 与证书（首次会自动申请 Let's Encrypt 证书）
 SERVER=root@47.84.72.178 SSH_KEY=~/.ssh/pinso.pem DOMAIN=pinso.top ./deploy/deploy.sh
 
 # 后台没有变化时跳过后台打包
@@ -193,7 +193,7 @@ SKIP_DASHBOARD=1 SERVER=... SSH_KEY=... DOMAIN=pinso.top ./deploy/deploy.sh
 - 证书续期：Certbot 自带的 `certbot.timer`（每天两次检查，到期前 30 天续期），续期后通过 `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` 重新加载 Nginx
 - 开机自启：`docker`、`nginx`、`certbot.timer` 均为 enabled，容器 `restart: unless-stopped`
 - 数据库迁移由一次性的 `migrate` 服务在每次启动时执行，完成后才启动 API
-- 常用命令：`docker compose ps`、`docker compose logs -f api`（在 `/opt/pinso` 下），`nginx -t && systemctl reload nginx`，`certbot certificates`
+- 常用命令：`docker compose -p pinso ps`、`docker compose -p pinso logs -f storefront`、`docker compose -p pinso logs -f api`（在 `/opt/pinso` 下），`nginx -t && systemctl reload nginx`，`certbot certificates`
 
 首次部署后需要创建管理员并导入初始数据：
 
@@ -205,10 +205,9 @@ SALEOR_API_URL=http://<IP>/graphql/ SALEOR_EMAIL=<邮箱> SALEOR_PASSWORD=<密�
 
 ## 上线前待办
 
-- **支付**：当前使用 Saleor 自带的测试网关（`mirumee.payments.dummy`），不会真实扣款。上线需在后台启用 Stripe 插件并填入密钥，前台在 `CheckoutPage` 接入 Stripe.js 获取支付凭证后传给 `payAndComplete`
+- **支付**：当前使用 Saleor 自带的测试网关（`mirumee.payments.dummy`），不会真实扣款。上线需在后台安装 Saleor Stripe 应用并填入密钥，前台 `saleor/storefront/build.env` 中设置 `NEXT_PUBLIC_ENABLE_STRIPE_PAYMENTS=true`、`NEXT_PUBLIC_ALLOW_DUMMY_PAYMENT=false`，并去掉 `deploy/docker-compose.yml` 中的 `ALLOW_DUMMY_PAYMENT`（官方前台已内置 Stripe 支付）
 - **图片**：商品、分类、横幅目前是 Pexels 示例图，需要在后台替换成品牌实拍图（商品图建议 3:4 竖图）
 - **政策文本**：隐私政策、服务条款是占位内容
 - **邮件模板**：目前是 Saleor 默认的英文模板，需要按品牌风格和中日英三语修改
 - **价格**：美元、日元价格是按汇率从人民币换算的，需要在后台逐一核对
-- **部署**：生产环境需设置 `SECRET_KEY`、`ALLOWED_HOSTS`、`ALLOWED_CLIENT_HOSTS`、`PUBLIC_URL`，并由 Nginx 提供 `/media/` 静态文件；前台是单页应用，Nginx 需配置 `try_files $uri /index.html`
-- **商品数量**：前台一次读取最多 100 件商品，超过后需要改为分页
+- **首页文案**：首页模型的初始文案沿用旧首页，可在后台「内容 → 模型 → Storefront — Homepage」调整

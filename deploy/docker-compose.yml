@@ -1,6 +1,6 @@
-# 应用服务：Saleor API/Worker + PostgreSQL + Redis
+# 应用服务：商城前台（Saleor Paper）+ Saleor API/Worker + PostgreSQL + Redis
 # 反向代理与 HTTPS 由宿主机上的 Nginx + Certbot 负责（配置见 deploy/nginx/）。
-# API 只监听 127.0.0.1:8000，注册服务只监听 127.0.0.1:8100，数据库和 Redis 不暴露任何端口。
+# 前台只监听 127.0.0.1:3000，API 只监听 127.0.0.1:8000，注册服务只监听 127.0.0.1:8100，数据库和 Redis 不暴露任何端口。
 # 所有服务 restart: unless-stopped，配合 Docker 开机自启，服务器重启后会自动恢复。
 
 x-saleor: &saleor
@@ -79,6 +79,38 @@ services:
     command: >
       sh -c 'export RSA_PRIVATE_KEY="$$(cat /run/secrets/jwt.pem)" &&
              exec celery --app saleor.celeryconf:app worker -B -E --concurrency=1 --loglevel=info'
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # 商城前台：GitHub 打包好的 Saleor Paper（Next.js standalone），部署时解压到 ./storefront
+  # 使用宿主机网络：服务端经本机 Nginx 访问 https://<域名>/graphql/（域名指向 127.0.0.1，不绕道 Cloudflare），
+  # 注册时调用本机 127.0.0.1:8100 的注册服务。Nginx 对来自 127.0.0.1 的请求不限流
+  storefront:
+    image: node:24-alpine
+    restart: unless-stopped
+    network_mode: host
+    working_dir: /app
+    command: ["node", "server.js"]
+    # 打包参数（渠道、语言等，见 saleor/storefront/build.env），运行时同样需要
+    env_file: ./storefront/pinso-build.env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 127.0.0.1
+      PORT: "3000"
+      NODE_OPTIONS: --max-old-space-size=512
+      # 「PINSO 前台」应用令牌（订单查询、渠道列表），由部署脚本创建并写入 .env
+      SALEOR_APP_TOKEN: ${STOREFRONT_APP_TOKEN:-}
+      # 缓存刷新 webhook 与订单查看链接的签名密钥，首次部署时随机生成
+      REVALIDATE_SECRET: ${STOREFRONT_REVALIDATE_SECRET:-}
+      ORDER_VIEW_SECRET: ${STOREFRONT_ORDER_VIEW_SECRET:-}
+      ALLOW_DUMMY_PAYMENT: "true"
+      ACCOUNT_GW_URL: http://127.0.0.1:8100
+    extra_hosts:
+      - "${DOMAIN:-localhost}:127.0.0.1"
+    volumes:
+      - ./storefront:/app
+    mem_limit: 768m
     depends_on:
       api:
         condition: service_healthy

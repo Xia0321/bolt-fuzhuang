@@ -1,0 +1,88 @@
+# 打包商城前台：Saleor Paper 前台源码 + 本仓库的定制补丁 → 发布到 GitHub Release「storefront-latest」
+# Jenkins 任务「发布商城前台」下载这里的打包结果部署（服务器内存不足以打包前台）。
+# saleor/storefront/ 有改动时自动运行，也可在 GitHub「Actions」页面手动运行。
+name: 打包商城前台
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - saleor/storefront/**
+      - .github/workflows/storefront.yml
+  workflow_dispatch:
+
+# 同时只打包一次，新的推送排队等候
+concurrency:
+  group: storefront
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+env:
+  PNPM: pnpm@10.28.1
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+        with:
+          path: pinso
+
+      - name: 读取前台源码版本
+        run: echo "STOREFRONT_REF=$(cat pinso/saleor/storefront/REF)" >> "$GITHUB_ENV"
+
+      - name: 拉取 Saleor Paper 前台源码
+        uses: actions/checkout@v4
+        with:
+          repository: saleor/storefront
+          ref: ${{ env.STOREFRONT_REF }}
+          path: storefront
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 打补丁
+        run: pinso/saleor/storefront/apply-patches.sh storefront
+
+      - name: 安装依赖
+        working-directory: storefront
+        env:
+          HUSKY: "0"
+        run: npx -y "$PNPM" install --frozen-lockfile
+
+      # 打包时会读取线上 Saleor 的 GraphQL 结构并预渲染页面
+      - name: 打包
+        working-directory: storefront
+        run: |
+          set -a; . ../pinso/saleor/storefront/build.env; set +a
+          npx -y "$PNPM" build
+
+      - name: 发布打包结果
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          out=storefront/.next/standalone
+          test -f "$out/server.js"
+          # standalone 不含静态资源，按 Next 官方说明复制进去
+          cp -r storefront/public "$out/public"
+          cp -r storefront/.next/static "$out/.next/static"
+          # 运行时也需要同样的参数（渠道列表等不是 NEXT_PUBLIC_ 变量，运行时读取），由 docker-compose 的 env_file 加载
+          cp pinso/saleor/storefront/build.env "$out/pinso-build.env"
+          # 记录对应的本仓库提交，Jenkins 据此判断打包结果是否已包含所需改动
+          printf 'commit=%s\nbuilt_at=%s\nsaleor_storefront=%s\n' \
+            "$GITHUB_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STOREFRONT_REF" > "$out/pinso-version.txt"
+          cp "$out/pinso-version.txt" .
+          tar -czf storefront.tar.gz -C "$out" .
+          if ! gh release view storefront-latest -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create storefront-latest -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
+              --title "商城前台（自动打包）" \
+              --notes "由 .github/workflows/storefront.yml 自动生成，供 Jenkins「发布商城前台」下载，请勿手动修改。"
+          fi
+          gh release upload storefront-latest storefront.tar.gz pinso-version.txt -R "$GITHUB_REPOSITORY" --clobber
+          echo "已发布：$(cat pinso-version.txt | tr '\n' ' ')"

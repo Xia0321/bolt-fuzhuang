@@ -1,22 +1,12 @@
-// Jenkins 任务「发布商城前台」：拉取 GitHub main → 打包前台 → 更新后端服务 → 部署到本机
-// 包含：顾客看到的网站页面，以及 Saleor 接口、注册服务、商品导入服务、Nginx、邮件等后端配置。
-// 管理后台页面由另一个任务「发布管理后台」发布（后台由 GitHub 打包，见 deploy/Jenkinsfile.dashboard）。
+// Jenkins 任务「发布商城前台」：拉取 GitHub main → 下载 GitHub 打包好的前台 → 更新后端服务 → 部署到本机
+// 包含：顾客看到的网站（Saleor Paper 前台，Node 服务），以及 Saleor 接口、注册服务、商品导入服务、Nginx、邮件等后端配置。
+// 前台打包需要较多内存，由 GitHub Actions（.github/workflows/storefront.yml）打包后发布到 Release「storefront-latest」。
+// 管理后台页面由另一个任务「发布管理后台」发布（见 deploy/Jenkinsfile.dashboard）。
 //
 // 每一步对应 server-deploy.sh 的一个阶段，任务页面上可以看到每步的进度、耗时和结果。
 def deploy(String phases) {
     // 部署需要 root（更新 Nginx、证书等），sudo 规则只允许执行本工作区中的部署脚本
     sh "sudo /bin/bash \"\$WORKSPACE/deploy/server-deploy.sh\" \"\$WORKSPACE\" ${phases}"
-}
-
-// 在 Node 容器中执行，服务器上无需安装 Node
-def inNode(String command) {
-    sh """
-        docker run --rm -u "\$(id -u):\$(id -g)" \\
-          -v "\$WORKSPACE":/app -w /app \\
-          -e VITE_SALEOR_API_URL=/graphql/ \\
-          -e npm_config_cache=/app/.npm-cache \\
-          node:20-alpine sh -c "${command}"
-    """
 }
 
 pipeline {
@@ -25,15 +15,15 @@ pipeline {
     options {
         disableConcurrentBuilds()
         buildDiscarder(logRotator(numToKeepStr: '20'))
-        timeout(time: 40, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')
     }
 
     stages {
-        stage('安装依赖') {
-            steps { script { inNode('npm ci --no-audit --no-fund') } }
-        }
-        stage('打包前台') {
-            steps { script { inNode('npm run build') } }
+        stage('等待 GitHub 打包前台') {
+            steps {
+                // 打包结果必须包含最近一次改动前台补丁或打包配置的提交
+                sh 'bash deploy/fetch-github-build.sh storefront.yml storefront-latest storefront-dist saleor/storefront .github/workflows/storefront.yml'
+            }
         }
         stage('检查运行环境') {
             steps { script { deploy('env') } }
@@ -49,6 +39,9 @@ pipeline {
         }
         stage('邮件与后台扩展') {
             steps { script { deploy('email,extensions') } }
+        }
+        stage('前台初始化') {
+            steps { script { deploy('storefront') } }
         }
         stage('验证') {
             steps { script { deploy('verify') } }

@@ -2,7 +2,8 @@
 # 服务器端部署（需要 root）：本地 deploy.sh 与 Jenkins 共用这一份逻辑。
 #
 # 用法：server-deploy.sh <源码目录> [阶段]
-#   源码目录中需要有 deploy/（Compose、Nginx 配置）和 dist/（已打包的前台）；
+#   源码目录中需要有 deploy/（Compose、Nginx 配置）、saleor/storefront/（前台初始化脚本）和
+#   storefront-dist/（GitHub 打包好的前台，Jenkins 由 deploy/fetch-github-build.sh 下载）；
 #   如果存在 dashboard-dist/（已打包的后台），也会一并更新，否则保留服务器上现有的后台页面。
 #
 #   阶段（可用逗号组合，默认 all 依次执行全部，本地 deploy.sh 使用）：
@@ -13,6 +14,7 @@
 #     nginx       配置 Nginx 与 HTTPS 证书
 #     email       配置邮件服务
 #     extensions  安装后台扩展
+#     storefront  前台初始化：Saleor 应用令牌、缓存刷新 webhook、首页等文案的内容模型，并刷新前台缓存
 #     verify      验证服务
 #     dashboard   只更新后台页面（dashboard-dist/），供 Jenkins「发布管理后台」使用
 #   Jenkins 按阶段分步调用，任务页面上可以看到每一步的进度。
@@ -34,14 +36,14 @@ export DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
 # 只接受已知的阶段名（Jenkins 的 sudo 规则允许传入阶段参数）
 for phase in ${PHASES//,/ }; do
   case "$phase" in
-    all|env|files|config|services|nginx|email|extensions|verify|dashboard) ;;
+    all|env|files|config|services|nginx|email|extensions|storefront|verify|dashboard) ;;
     *) echo "未知阶段：$phase"; exit 1 ;;
   esac
 done
 want() { [ "$PHASES" = all ] || [[ ",$PHASES," == *",$1,"* ]]; }
 
 if want files; then
-  [ -f "$SRC/dist/index.html" ] || { echo "缺少已打包的前台：$SRC/dist"; exit 1; }
+  [ -f "$SRC/storefront-dist/server.js" ] || { echo "缺少已打包的前台：$SRC/storefront-dist"; exit 1; }
 fi
 
 mkdir -p "$REMOTE_DIR"
@@ -143,7 +145,7 @@ if [ -n "$missing" ]; then
 fi
 systemctl enable nginx >/dev/null 2>&1
 rm -f /etc/nginx/sites-enabled/default
-mkdir -p "$REMOTE_DIR"/www/storefront "$REMOTE_DIR"/www/dashboard "$REMOTE_DIR"/www/admin-tools "$REMOTE_DIR"/media "$REMOTE_DIR"/secrets \
+mkdir -p "$REMOTE_DIR"/storefront "$REMOTE_DIR"/www/dashboard "$REMOTE_DIR"/www/admin-tools "$REMOTE_DIR"/media "$REMOTE_DIR"/secrets \
          /etc/nginx/pinso /var/www/certbot
 echo "docker $(docker version --format '{{.Server.Version}}') · $(nginx -v 2>&1 | cut -d/ -f2) · certbot $(certbot --version 2>&1 | cut -d' ' -f2)"
 fi
@@ -161,7 +163,11 @@ rsync -a --delete "$SRC/deploy/saleor/" "$REMOTE_DIR/saleor/"
 rsync -a --delete --exclude node_modules "$SRC/deploy/product-importer/" "$REMOTE_DIR/product-importer/"
 rsync -a --delete "$SRC/deploy/nginx/" "$REMOTE_DIR/nginx/"
 rsync -a --delete "$SRC/deploy/admin-panel/" "$REMOTE_DIR/www/admin-tools/"
-rsync -a --delete "$SRC/dist/" "$REMOTE_DIR/www/storefront/"
+# 前台整体替换（含页面缓存 .next/cache：旧版本的缓存与新代码不匹配）
+rsync -a --delete "$SRC/storefront-dist/" "$REMOTE_DIR/storefront/"
+sed 's/^/前台版本：/' "$REMOTE_DIR/storefront/pinso-version.txt"
+# 旧版前台（React 单页应用）的静态文件已不再使用
+rm -rf "$REMOTE_DIR/www/storefront"
 if [ -f "$SRC/dashboard-dist/index.html" ]; then
   install_dashboard
   echo "前台和后台已更新"
@@ -188,6 +194,9 @@ EOF
 fi
 # 首次部署时自动生成管理工具密钥
 grep -q "^GW_ADMIN_SECRET=." .env || echo "GW_ADMIN_SECRET=$(openssl rand -hex 20)" >> .env
+# 前台：缓存刷新 webhook 与订单查看链接的签名密钥
+grep -q "^STOREFRONT_REVALIDATE_SECRET=." .env || echo "STOREFRONT_REVALIDATE_SECRET=$(openssl rand -hex 32)" >> .env
+grep -q "^STOREFRONT_ORDER_VIEW_SECRET=." .env || echo "STOREFRONT_ORDER_VIEW_SECRET=$(openssl rand -hex 32)" >> .env
 # 与访问地址相关的配置每次按 DOMAIN 重新写入
 set_env() { grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || echo "$1=$2" >> .env; }
 if [ -n "$DOMAIN" ]; then
@@ -218,8 +227,8 @@ cd "$REMOTE_DIR"
 if want services; then
 step "启动应用容器"
 docker compose -p pinso up -d --build --remove-orphans
-# account-gw 以卷挂载运行，文件更新后需手动重启才能加载新代码
-docker compose -p pinso restart account-gw
+# account-gw、前台以卷挂载运行，文件更新后需手动重启才能加载新代码
+docker compose -p pinso restart account-gw storefront
 for i in $(seq 1 60); do
   [ "$(docker compose -p pinso ps api --format '{{.Health}}')" = healthy ] && { echo "✓ API 容器已就绪"; break; }
   [ "$i" = 60 ] && { echo "✗ API 容器未就绪"; docker compose -p pinso logs api --tail 30; exit 1; }
@@ -240,7 +249,7 @@ fi
 
 if want nginx; then
 step "配置 Nginx 与 HTTPS 证书"
-cp nginx/locations.conf nginx/ssl.conf nginx/security-headers.conf /etc/nginx/pinso/
+cp nginx/locations.conf nginx/ssl.conf nginx/security-headers.conf nginx/storefront-proxy.conf /etc/nginx/pinso/
 cp nginx/ratelimit.conf /etc/nginx/conf.d/pinso-ratelimit.conf
 cp nginx/cloudflare-realip.conf /etc/nginx/conf.d/pinso-cloudflare-realip.conf
 site=/etc/nginx/sites-available/pinso
@@ -294,6 +303,42 @@ else
 fi
 fi
 
+if want storefront; then
+step "前台初始化"
+django_shell() { docker compose -p pinso exec -T "$@" api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell'; }
+set_env() { grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || echo "$1=$2" >> .env; }
+# 「PINSO 前台」应用（.env 中没有令牌时生成）与「PINSO 前台内容初始化」应用的临时令牌
+new_token=0
+grep -q "^STOREFRONT_APP_TOKEN=." .env || new_token=1
+tokens="$(django_shell -e NEW_STOREFRONT_TOKEN=$new_token < saleor/setup_storefront.py)"
+echo "$tokens" | grep -v "TOKEN=" || true
+content_token="$(echo "$tokens" | sed -n 's/^CONTENT_TOKEN=//p')"
+if [ "$new_token" = 1 ]; then
+  set_env STOREFRONT_APP_TOKEN "$(echo "$tokens" | sed -n 's/^STOREFRONT_APP_TOKEN=//p')"
+  docker compose -p pinso up -d storefront
+  echo "✓ 已生成前台应用令牌"
+fi
+[ -n "$DOMAIN" ] && storefront_url="https://$DOMAIN" || storefront_url="http://$SERVER_IP"
+# 内容模型与 webhook（saleor/storefront/setup.mjs，在 Node 容器中经本机端口访问 Saleor）
+docker run --rm --network host -v "$SRC/saleor/storefront":/setup:ro \
+  -e SALEOR_API_URL=http://127.0.0.1:8000/graphql/ \
+  -e CONTENT_TOKEN="$content_token" \
+  -e STOREFRONT_APP_TOKEN="$(sed -n 's/^STOREFRONT_APP_TOKEN=//p' .env)" \
+  -e STOREFRONT_URL="$storefront_url" \
+  -e REVALIDATE_SECRET="$(sed -n 's/^STOREFRONT_REVALIDATE_SECRET=//p' .env)" \
+  node:24-alpine node /setup/setup.mjs || setup_failed=1
+django_shell -e STOREFRONT_SETUP_MODE=cleanup < saleor/setup_storefront.py >/dev/null
+[ -z "${setup_failed:-}" ] || { echo "✗ 前台初始化失败"; exit 1; }
+# 等前台启动后刷新全部缓存（打包时预渲染的页面不含应用令牌和新建的内容）
+for i in $(seq 1 30); do
+  curl -fsS -o /dev/null -m 5 http://127.0.0.1:3000/api/auth/register && break
+  [ "$i" = 30 ] && { echo "✗ 前台未启动"; docker compose -p pinso logs storefront --tail 30; exit 1; }
+  sleep 2
+done
+curl -fsS -m 60 -H "Authorization: Bearer $(sed -n 's/^STOREFRONT_REVALIDATE_SECRET=//p' .env)" \
+  "http://127.0.0.1:3000/api/revalidate?all=1" >/dev/null && echo "✓ 已刷新前台缓存"
+fi
+
 if want verify || want dashboard; then
 step "验证服务"
 if [ -n "$DOMAIN" ]; then
@@ -304,8 +349,8 @@ fi
 code="$(curl -sS -o /dev/null -w '%{http_code}' "${resolve[@]}" "$base/graphql/" \
   -H 'Content-Type: application/json' -d '{"query":"{ shop { name } }"}')"
 [ "$code" = 200 ] || { echo "✗ API 返回 $code"; exit 1; }
-code="$(curl -sS -o /dev/null -w '%{http_code}' "${resolve[@]}" "$base/")"
-[ "$code" = 200 ] || { echo "✗ 前台返回 $code"; exit 1; }
+code="$(curl -sS -o /dev/null -w '%{http_code}' -L "${resolve[@]}" "$base/")"
+[ "$code" = 200 ] || { echo "✗ 前台返回 $code"; docker compose -p pinso logs storefront --tail 30; exit 1; }
 code="$(curl -sS -o /dev/null -w '%{http_code}' "${resolve[@]}" "$base/dashboard/")"
 [ "$code" = 200 ] || { echo "✗ 后台返回 $code"; exit 1; }
 echo "✓ 前台、后台与 API 正常"

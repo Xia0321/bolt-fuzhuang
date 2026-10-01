@@ -28,7 +28,7 @@ jobs:
   - script: |
       pipelineJob('__JOB_NAME__') {
         displayName('发布商城前台')
-        description('顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件）。拉取 GitHub main → 打包前台 → 分步部署到 https://__DOMAIN__/')
+        description('顾客看到的网站 + 后端服务（Saleor 接口、注册服务、商品导入、Nginx、邮件）。拉取 GitHub main → 下载 GitHub 打包好的前台 → 分步部署到 https://__DOMAIN__/')
         definition {
           cpsScm {
             scm {
