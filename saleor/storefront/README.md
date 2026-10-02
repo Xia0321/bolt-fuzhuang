@@ -20,7 +20,7 @@ schema.json         内容模型结构，从官方 config/saleor/storefront-cont
 | `0002-pinso-brand` | 店名、PINSO 字标、网站图标、页脚（标语、隐私政策/服务条款链接多语言化、去掉 Powered by Paper；页脚菜单平铺的页面链接直接显示为链接）、首页占位图 |
 | `0003-register-via-account-gw` | 注册改为经注册服务 `deploy/account-gw`：Cloudflare Turnstile 人机验证、注册频率限制、替换未确认的同邮箱账号；登录时账号未确认、已停用给出明确提示 |
 | `0004-checkout` | 结算页：选择省份后城市改为下拉（中国地址 Saleor 只接受地址库中的城市）、配送方式名称取翻译、工作日/免费/选填/必填等文案多语言化、货币符号显示为 ¥；支持 Saleor 自带的测试支付插件 `mirumee.payments.dummy`（官方只支持 Dummy Payment App） |
-| `0005-self-hosting` | 自建服务器：免运费门槛从后台「配送方式」中免运费规则的最低订单金额实时读取；缓存刷新时商品事件刷新全部渠道、支持翻译事件；可关闭 Next 图片压缩 |
+| `0005-self-hosting` | 自建服务器：免运费门槛从后台「配送方式」中免运费规则的最低订单金额实时读取；缓存刷新：商品事件刷新全部渠道；支持翻译事件；配送区域、仓库、渠道、促销、配送价格、属性值、商品图片等无法定位到具体页面的事件刷新全部缓存；收到通知后缓存立即作废（官方默认先返回一次旧数据）；可关闭 Next 图片压缩 |
 | `0006-header-region-picker` | 顶部导航栏搜索框右侧加语言/币种切换（与页脚的相同，手机上只显示地球图标），菜单向下展开 |
 
 ## 网址
@@ -35,7 +35,7 @@ schema.json         内容模型结构，从官方 config/saleor/storefront-cont
 - **免运费门槛**：后台「配送 → 配送方式」中价格为 0 的方式的最低订单金额
 - **退换天数**：模型 Storefront — Policies 的 Returns window days
 
-后台修改后通过 webhook 自动刷新前台缓存（商品图片单独增删除外，最多 1 小时后生效）。
+后台修改后通过 webhook 立即刷新前台缓存，订阅的事件清单与说明见 `setup.mjs` 中的 `WEBHOOK_EVENTS`（对照 Saleor 全部事件整理）。
 
 ## 修改补丁
 

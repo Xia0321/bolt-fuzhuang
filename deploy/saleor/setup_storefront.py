@@ -22,7 +22,17 @@ APPS = {
     "pinso.storefront": ("PINSO 前台", ["MANAGE_ORDERS"]),
     "pinso.storefront-content": (
         "PINSO 前台内容与缓存刷新",
-        ["MANAGE_PAGES", "MANAGE_PAGE_TYPES_AND_ATTRIBUTES", "MANAGE_TRANSLATIONS", "MANAGE_PRODUCTS", "MANAGE_MENUS"],
+        # 后三项只用于接收配送、渠道、促销事件（Saleor 按权限决定是否投递）
+        [
+            "MANAGE_PAGES",
+            "MANAGE_PAGE_TYPES_AND_ATTRIBUTES",
+            "MANAGE_TRANSLATIONS",
+            "MANAGE_PRODUCTS",
+            "MANAGE_MENUS",
+            "MANAGE_SHIPPING",
+            "MANAGE_CHANNELS",
+            "MANAGE_DISCOUNTS",
+        ],
     ),
 }
 

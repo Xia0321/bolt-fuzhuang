@@ -14,21 +14,10 @@ index 3bdcf07..b956d1d 100644
  		formats: ["image/webp"],
  		remotePatterns: imageRemotePatterns,
 diff --git a/src/app/api/revalidate/route.ts b/src/app/api/revalidate/route.ts
-index eb91faf..b1cdcce 100644
+index eb91faf..d812d74 100644
 --- a/src/app/api/revalidate/route.ts
 +++ b/src/app/api/revalidate/route.ts
-@@ -5,7 +5,10 @@ import { getStorefrontChannelSlugs } from "@/lib/channel-slugs";
- import {
- 	CACHE_PROFILES,
- 	buildCatchAllTag,
-+	buildMenuRevalidationTags,
- 	buildTag,
-+	FOOTER_MENU_SLUG,
-+	NAVBAR_MENU_SLUG,
- 	extractMenuSlugFromWebhookPayload,
- 	extractPageSlugFromWebhookPayload,
- 	planFullPurgeTagEntries,
-@@ -66,7 +69,40 @@ function extractCollectionSlugs(product: Record<string, unknown>): string[] | un
+@@ -66,7 +66,78 @@ function extractCollectionSlugs(product: Record<string, unknown>): string[] | un
  		.filter((slug): slug is string => typeof slug === "string" && slug.length > 0);
  }
  
@@ -46,23 +35,61 @@ index eb91faf..b1cdcce 100644
 +
 +const TRANSLATION_EVENTS = new Set(["translation_created", "translation_updated"]);
 +
++/** PINSO: translations whose payload names the owner by slug (see saleor/storefront/setup.mjs). */
++const SCOPED_TRANSLATIONS = new Set([
++	"ProductTranslation",
++	"CategoryTranslation",
++	"CollectionTranslation",
++	"PageTranslation",
++]);
++
 +/**
-+ * PINSO: translations that carry no slug of their owner. Menu item translations refresh
-+ * both storefront menus; attribute value translations (storefront Model copy is stored as
-+ * attribute values) refresh the storefront content of every channel.
++ * PINSO: events whose effect on the storefront cannot be pinned to one product / page —
++ * availability (warehouses, shipping zones, channels), prices (promotions), free-shipping
++ * threshold (shipping prices), shared attribute values (colour names / swatches) and media
++ * (payload carries only the product ID). They refresh every cached page, like `?all=1`.
++ * Cheap for a small catalog; the alternative is up to an hour of stale data.
 + */
-+async function revalidateUnscopedTranslation(typename: unknown): Promise<string[] | null> {
-+	if (typename !== "MenuItemTranslation" && typename !== "AttributeValueTranslation") return null;
-+	const channels = await getStorefrontChannelSlugs();
-+	if (typename === "MenuItemTranslation") {
-+		return revalidateTags(
-+			[NAVBAR_MENU_SLUG, FOOTER_MENU_SLUG].flatMap((slug) => buildMenuRevalidationTags(slug, channels)),
-+		);
-+	}
-+	const plan = planStorefrontContentRevalidation("storefront-chrome", channels, DefaultChannelSlug);
-+	if (plan.action !== "revalidate") return [];
-+	for (const path of plan.paths) revalidatePath(path);
-+	return revalidateTags(plan.tags);
++const FULL_PURGE_EVENTS = new Set([
++	"product_media_created",
++	"product_media_updated",
++	"product_media_deleted",
++	"promotion_created",
++	"promotion_updated",
++	"promotion_deleted",
++	"promotion_started",
++	"promotion_ended",
++	"promotion_rule_created",
++	"promotion_rule_updated",
++	"promotion_rule_deleted",
++	"sale_created",
++	"sale_updated",
++	"sale_deleted",
++	"sale_toggle",
++	"shipping_zone_created",
++	"shipping_zone_updated",
++	"shipping_zone_deleted",
++	"shipping_price_created",
++	"shipping_price_updated",
++	"shipping_price_deleted",
++	"warehouse_created",
++	"warehouse_updated",
++	"warehouse_deleted",
++	"channel_created",
++	"channel_updated",
++	"channel_deleted",
++	"channel_status_changed",
++	"attribute_created",
++	"attribute_updated",
++	"attribute_deleted",
++	"attribute_value_created",
++	"attribute_value_updated",
++	"attribute_value_deleted",
++]);
++
++async function fullPurge(): Promise<string[]> {
++	revalidatePath("/", "layout");
++	return revalidateTags(planFullPurgeTagEntries(await getStorefrontChannelSlugs()));
 +}
 +
 +function parseWebhookPayload(rawPayload: unknown): ParsedWebhookPayload {
@@ -70,34 +97,41 @@ index eb91faf..b1cdcce 100644
  	if (!payload || typeof payload !== "object") {
  		return { type: "unknown" };
  	}
-@@ -233,8 +269,9 @@ export async function POST(request: NextRequest) {
+@@ -233,8 +304,15 @@ export async function POST(request: NextRequest) {
  	console.log("[Revalidate] Delivery:", delivery);
  
  	const eventScope = resolveWebhookEventScope(eventHeader);
 +	const isTranslationEvent = TRANSLATION_EVENTS.has(eventHeader?.trim().toLowerCase() ?? "");
++
++	if (FULL_PURGE_EVENTS.has(eventHeader?.trim().toLowerCase() ?? "")) {
++		const tags = await fullPurge();
++		console.log("[Revalidate] Full purge for event:", { ...delivery, tags: tags.length });
++		return Response.json({ paths: ["/ (all routes)"], tags, success: true });
++	}
  
 -	if (eventHeader && !eventScope) {
 +	if (eventHeader && !eventScope && !isTranslationEvent) {
  		console.log("[Revalidate] Ignoring event Paper does not act on:", delivery);
  		return Response.json({ paths: [], tags: [], success: true, skipped: true, reason: "unhandled_event" });
  	}
-@@ -246,6 +283,15 @@ export async function POST(request: NextRequest) {
+@@ -246,6 +324,16 @@ export async function POST(request: NextRequest) {
  			console.log("[Revalidate] Raw payload:", JSON.stringify(payload, null, 2));
  		}
  
 +		if (isTranslationEvent) {
 +			const typename = (payload as { translation?: { __typename?: unknown } })?.translation?.__typename;
-+			const revalidated = await revalidateUnscopedTranslation(typename);
-+			if (revalidated) {
-+				console.log("[Revalidate] Success:", { type: "translation", tags: revalidated });
-+				return Response.json({ paths: [], tags: revalidated, success: true });
++			// Menu item, attribute (value), variant, shipping method … translations: no owner slug
++			if (typeof typename !== "string" || !SCOPED_TRANSLATIONS.has(typename)) {
++				const tags = await fullPurge();
++				console.log("[Revalidate] Full purge for translation:", { typename, tags: tags.length });
++				return Response.json({ paths: ["/ (all routes)"], tags, success: true });
 +			}
 +		}
 +
  		const parsed = parseWebhookPayload(payload);
  		const { slug, channel } = parsed;
  		// The header is authoritative when present; payload shape is the fallback for
-@@ -355,8 +401,16 @@ export async function POST(request: NextRequest) {
+@@ -355,8 +443,16 @@ export async function POST(request: NextRequest) {
  			return Response.json({ paths: [], tags: revalidatedTags, success: true });
  		}
  
@@ -116,7 +150,7 @@ index eb91faf..b1cdcce 100644
  			return Response.json(
  				{ error: "Channel not specified in webhook and NEXT_PUBLIC_DEFAULT_CHANNEL not set" },
  				{ status: 400 },
-@@ -367,36 +421,38 @@ export async function POST(request: NextRequest) {
+@@ -367,36 +463,38 @@ export async function POST(request: NextRequest) {
  		// would otherwise keep the grids permanently cold. Tags are sharded per surface/slug
  		// (see queueListingTags). No header (manual POST) is treated as listing-affecting,
  		// matching prior behaviour.
@@ -249,4 +283,19 @@ index d45a416..0850a4a 100644
 +			shipping: { ...content.policies.shipping, freeShippingThreshold },
 +		},
 +	};
+ }
+diff --git a/src/lib/revalidate-tags.ts b/src/lib/revalidate-tags.ts
+index c37b58b..7d34e72 100644
+--- a/src/lib/revalidate-tags.ts
++++ b/src/lib/revalidate-tags.ts
+@@ -10,6 +10,9 @@ export async function revalidateTags(
+ ): Promise<string[]> {
+ 	if (entries.length === 0) return [];
+ 
+-	await Promise.all(entries.map(({ tag, profile }) => revalidateTag(tag, profile)));
++	// PINSO: webhook-driven invalidation must be visible to the very next shopper (stock, price,
++	// availability). `{ expire: 0 }` expires the data instead of serving it stale once while it
++	// regenerates (the profile's stale-while-revalidate window). See Next docs: revalidateTag.
++	await Promise.all(entries.map(({ tag }) => revalidateTag(tag, { expire: 0 })));
+ 	return entries.map(({ tag }) => tag);
  }

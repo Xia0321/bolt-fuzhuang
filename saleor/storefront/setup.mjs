@@ -192,25 +192,44 @@ async function ensurePages(token, attributes, pageTypes) {
 const PRODUCT_FIELDS = 'slug category { slug } collections { slug }';
 
 // Paper 的 /api/revalidate 按 saleor-event 请求头判断事件类型，按负载中的 slug 刷新对应缓存。
-// 商品图片事件（PRODUCT_MEDIA_*）的负载里只有商品 ID、没有 slug，不订阅；商品其他改动会一并刷新，
-// 单独增删图片时最多等缓存过期（1 小时）。
+// 对照 Saleor 全部事件整理（saleor/webhook/event_types.py），凡是影响前台显示的都订阅：
+//   - 能定位到具体商品 / 分类 / 合集 / 页面 / 菜单的，负载带 slug，只刷新对应缓存
+//   - 无法定位的（配送区域、仓库、渠道影响能否购买，促销影响价格，配送价格影响免运费门槛，
+//     属性值影响颜色名称和色块，商品图片负载只有商品 ID），前台刷新全部缓存（补丁 0005 的 FULL_PURGE_EVENTS）
+// 不订阅：优惠码（只在结算时用，结算不缓存）、订单、顾客等与页面缓存无关的事件
+const VARIANT_PRODUCT = `productVariant { product { ${PRODUCT_FIELDS} } }`;
+const FULL_PURGE = '__typename';
+// 以下三个事件的 productVariant 是非空类型，与其他事件的同名字段冲突，用别名 variant（前台同样识别）
+const VARIANT_PRODUCT_NON_NULL = `variant: productVariant { product { ${PRODUCT_FIELDS} } }`;
 const WEBHOOK_EVENTS = {
+  // 商品、规格（含上下架、价格：规格的渠道价格修改会触发 ProductVariantUpdated）
   ProductCreated: `product { ${PRODUCT_FIELDS} }`,
   ProductUpdated: `product { ${PRODUCT_FIELDS} }`,
   ProductDeleted: `product { ${PRODUCT_FIELDS} }`,
-  ProductVariantCreated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
-  ProductVariantUpdated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
-  ProductVariantDeleted: `productVariant { product { ${PRODUCT_FIELDS} } }`,
-  // 库存变化（后台改库存数量、售罄、补货）：刷新商品页的可购买状态
-  ProductVariantStockUpdated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
-  ProductVariantOutOfStock: `productVariant { product { ${PRODUCT_FIELDS} } }`,
-  ProductVariantBackInStock: `productVariant { product { ${PRODUCT_FIELDS} } }`,
+  ProductMetadataUpdated: `product { ${PRODUCT_FIELDS} }`,
+  ProductVariantCreated: VARIANT_PRODUCT,
+  ProductVariantUpdated: VARIANT_PRODUCT,
+  ProductVariantDeleted: VARIANT_PRODUCT,
+  ProductVariantMetadataUpdated: VARIANT_PRODUCT,
+  ProductVariantDiscountedPriceUpdated: VARIANT_PRODUCT_NON_NULL,
+  // 库存（后台改数量、下单后售罄、补货）
+  ProductVariantStockUpdated: VARIANT_PRODUCT,
+  ProductVariantOutOfStock: VARIANT_PRODUCT,
+  ProductVariantBackInStock: VARIANT_PRODUCT,
+  ProductVariantOutOfStockInChannel: VARIANT_PRODUCT_NON_NULL,
+  ProductVariantBackInStockInChannel: VARIANT_PRODUCT_NON_NULL,
+  // 商品图片：负载只有商品 ID，刷新全部
+  ProductMediaCreated: FULL_PURGE,
+  ProductMediaUpdated: FULL_PURGE,
+  ProductMediaDeleted: FULL_PURGE,
+  // 分类、合集、页面（含首页等文案模型）、菜单
   CategoryCreated: 'category { slug }',
   CategoryUpdated: 'category { slug }',
   CategoryDeleted: 'category { slug }',
   CollectionCreated: 'collection { slug }',
   CollectionUpdated: 'collection { slug }',
   CollectionDeleted: 'collection { slug }',
+  CollectionMetadataUpdated: 'collection { slug }',
   PageCreated: 'page { slug }',
   PageUpdated: 'page { slug }',
   PageDeleted: 'page { slug }',
@@ -220,8 +239,44 @@ const WEBHOOK_EVENTS = {
   MenuItemCreated: 'menuItem { menu { slug } }',
   MenuItemUpdated: 'menuItem { menu { slug } }',
   MenuItemDeleted: 'menuItem { menu { slug } }',
-  TranslationCreated: `translation { ...PinsoTranslation }`,
-  TranslationUpdated: `translation { ...PinsoTranslation }`,
+  // 翻译：商品、分类、合集、页面按 slug 刷新，其他（菜单项、属性值、规格等）刷新全部
+  TranslationCreated: 'translation { ...PinsoTranslation }',
+  TranslationUpdated: 'translation { ...PinsoTranslation }',
+  // 能否购买：配送区域、仓库、渠道
+  ShippingZoneCreated: FULL_PURGE,
+  ShippingZoneUpdated: FULL_PURGE,
+  ShippingZoneDeleted: FULL_PURGE,
+  WarehouseCreated: FULL_PURGE,
+  WarehouseUpdated: FULL_PURGE,
+  WarehouseDeleted: FULL_PURGE,
+  ChannelCreated: FULL_PURGE,
+  ChannelUpdated: FULL_PURGE,
+  ChannelDeleted: FULL_PURGE,
+  ChannelStatusChanged: FULL_PURGE,
+  // 免运费门槛（前台从配送方式读取）
+  ShippingPriceCreated: FULL_PURGE,
+  ShippingPriceUpdated: FULL_PURGE,
+  ShippingPriceDeleted: FULL_PURGE,
+  // 价格：促销活动（含旧版 Sale）
+  PromotionCreated: FULL_PURGE,
+  PromotionUpdated: FULL_PURGE,
+  PromotionDeleted: FULL_PURGE,
+  PromotionStarted: FULL_PURGE,
+  PromotionEnded: FULL_PURGE,
+  PromotionRuleCreated: FULL_PURGE,
+  PromotionRuleUpdated: FULL_PURGE,
+  PromotionRuleDeleted: FULL_PURGE,
+  SaleCreated: FULL_PURGE,
+  SaleUpdated: FULL_PURGE,
+  SaleDeleted: FULL_PURGE,
+  SaleToggle: FULL_PURGE,
+  // 属性与属性值（颜色名称、色块等）
+  AttributeCreated: FULL_PURGE,
+  AttributeUpdated: FULL_PURGE,
+  AttributeDeleted: FULL_PURGE,
+  AttributeValueCreated: FULL_PURGE,
+  AttributeValueUpdated: FULL_PURGE,
+  AttributeValueDeleted: FULL_PURGE,
 };
 
 const WEBHOOK_QUERY = `subscription {
