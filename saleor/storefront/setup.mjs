@@ -1,13 +1,13 @@
 // 前台（Saleor Paper）需要的 Saleor 配置，可重复执行：
 //   1. 内容模型：创建 Storefront — * 页面类型、属性和页面（首页、购物袋、结算等文案，见 content.mjs）。
 //      已存在的页面不会被覆盖，运营在后台改过的文案保持不变。
-//   2. 缓存刷新：给前台应用创建 webhook，商品、分类、合集、页面、菜单、翻译变化时通知前台
+//   2. 缓存刷新：创建 webhook（挂在 CONTENT_TOKEN 所属应用上），商品、分类、合集、页面、菜单、翻译变化时通知前台
 //      <STOREFRONT_URL>/api/revalidate 刷新缓存（以 Authorization: Bearer <REVALIDATE_SECRET> 校验）。
 //
 // 环境变量：
 //   SALEOR_API_URL         默认 http://127.0.0.1:8000/graphql/
-//   CONTENT_TOKEN          有「管理页面」「管理页面类型和属性」「管理翻译」权限的令牌（应用或员工）
-//   STOREFRONT_APP_TOKEN   前台应用的令牌（webhook 挂在前台应用上）；不设置则跳过 webhook
+//   CONTENT_TOKEN          应用令牌，需要「管理页面」「管理页面类型和属性」「管理翻译」「管理商品」「管理菜单」权限。
+//                          webhook 挂在该应用上：Saleor 只把商品、菜单、页面、翻译事件发给有对应权限的应用
 //   STOREFRONT_URL         前台公网地址，如 https://pinso.top
 //   REVALIDATE_SECRET      前台刷新缓存的密钥
 //
@@ -264,11 +264,11 @@ async function ensureWebhook(token) {
 // ---------- 入口 ----------
 
 // 先建 webhook：之后新建的内容页面会通知前台刷新缓存
-if (env.STOREFRONT_APP_TOKEN && env.STOREFRONT_URL && env.REVALIDATE_SECRET) {
+if (env.CONTENT_TOKEN && env.STOREFRONT_URL && env.REVALIDATE_SECRET) {
   console.log('前台缓存刷新：');
-  await ensureWebhook(env.STOREFRONT_APP_TOKEN);
+  await ensureWebhook(env.CONTENT_TOKEN);
 } else {
-  console.log('未设置 STOREFRONT_APP_TOKEN / STOREFRONT_URL / REVALIDATE_SECRET，跳过 webhook');
+  console.log('未设置 CONTENT_TOKEN / STOREFRONT_URL / REVALIDATE_SECRET，跳过 webhook');
 }
 
 if (env.CONTENT_TOKEN) {

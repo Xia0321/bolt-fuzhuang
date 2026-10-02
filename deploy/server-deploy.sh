@@ -319,7 +319,7 @@ if want storefront; then
 step "前台初始化"
 django_shell() { docker compose -p pinso exec -T "$@" api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell'; }
 set_env() { grep -q "^$1=" .env && sed -i "s|^$1=.*|$1=$2|" .env || echo "$1=$2" >> .env; }
-# 「PINSO 前台」应用（.env 中没有令牌时生成）与「PINSO 前台内容初始化」应用的临时令牌
+# 「PINSO 前台」应用（.env 中没有令牌时生成）与「PINSO 前台内容与缓存刷新」应用的临时令牌
 new_token=0
 grep -q "^STOREFRONT_APP_TOKEN=." .env || new_token=1
 tokens="$(django_shell -e NEW_STOREFRONT_TOKEN=$new_token < saleor/setup_storefront.py)"
@@ -335,7 +335,6 @@ fi
 docker run --rm --network host -v "$SRC/saleor/storefront":/setup:ro \
   -e SALEOR_API_URL=http://127.0.0.1:8000/graphql/ \
   -e CONTENT_TOKEN="$content_token" \
-  -e STOREFRONT_APP_TOKEN="$(sed -n 's/^STOREFRONT_APP_TOKEN=//p' .env)" \
   -e STOREFRONT_URL="$storefront_url" \
   -e REVALIDATE_SECRET="$(sed -n 's/^STOREFRONT_REVALIDATE_SECRET=//p' .env)" \
   node:24-alpine node /setup/setup.mjs || setup_failed=1
