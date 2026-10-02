@@ -201,6 +201,10 @@ const WEBHOOK_EVENTS = {
   ProductVariantCreated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
   ProductVariantUpdated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
   ProductVariantDeleted: `productVariant { product { ${PRODUCT_FIELDS} } }`,
+  // 库存变化（后台改库存数量、售罄、补货）：刷新商品页的可购买状态
+  ProductVariantStockUpdated: `productVariant { product { ${PRODUCT_FIELDS} } }`,
+  ProductVariantOutOfStock: `productVariant { product { ${PRODUCT_FIELDS} } }`,
+  ProductVariantBackInStock: `productVariant { product { ${PRODUCT_FIELDS} } }`,
   CategoryCreated: 'category { slug }',
   CategoryUpdated: 'category { slug }',
   CategoryDeleted: 'category { slug }',
