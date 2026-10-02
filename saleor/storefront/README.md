@@ -21,10 +21,11 @@ schema.json         内容模型结构，从官方 config/saleor/storefront-cont
 | `0003-register-via-account-gw` | 注册改为经注册服务 `deploy/account-gw`：Cloudflare Turnstile 人机验证、注册频率限制、替换未确认的同邮箱账号 |
 | `0004-checkout` | 结算页：选择省份后城市改为下拉（中国地址 Saleor 只接受地址库中的城市）、配送方式名称取翻译、工作日/免费/选填/必填等文案多语言化、货币符号显示为 ¥；支持 Saleor 自带的测试支付插件 `mirumee.payments.dummy`（官方只支持 Dummy Payment App） |
 | `0005-self-hosting` | 自建服务器：免运费门槛从后台「配送方式」中免运费规则的最低订单金额实时读取；缓存刷新时商品事件刷新全部渠道、支持翻译事件；可关闭 Next 图片压缩 |
+| `0006-header-region-picker` | 顶部导航栏搜索框右侧加语言/币种切换（与页脚的相同，手机上只显示地球图标），菜单向下展开 |
 
 ## 网址
 
-`/{语言}/{渠道}/…`：语言 `zh` / `en` / `ja`，渠道 `cn`（人民币）/ `global`（美元）/ `jp`（日元）。首页 `/` 跳转到 `/zh/cn`。结算 `/checkout`，订单查看 `/order/…`。
+`/{语言}/{渠道}/…`：语言 `zh` / `en` / `ja`，渠道 `cn`（人民币）/ `global`（美元）/ `jp`（日元）。首页 `/` 跳转到 `/zh/cn`。语言和币种在顶部导航栏右侧或页脚切换。结算 `/checkout`，订单查看 `/order/…`。
 
 ## 文案在哪里改
 

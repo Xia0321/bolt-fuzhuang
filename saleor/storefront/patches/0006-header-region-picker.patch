@@ -1,0 +1,155 @@
+diff --git a/src/app/(storefront)/[locale]/[channel]/(main)/browse-chrome-slots.tsx b/src/app/(storefront)/[locale]/[channel]/(main)/browse-chrome-slots.tsx
+index 231dd9b..e48dcc2 100644
+--- a/src/app/(storefront)/[locale]/[channel]/(main)/browse-chrome-slots.tsx
++++ b/src/app/(storefront)/[locale]/[channel]/(main)/browse-chrome-slots.tsx
+@@ -14,6 +14,16 @@ import { SearchBar } from "@/ui/components/nav/components/search-bar";
+ import { HeaderChromeSync } from "@/ui/components/nav/components/user-menu/header-chrome-sync";
+ import { UserMenuServer } from "@/ui/components/nav/components/user-menu/user-menu-server";
+ import { AnnouncementBar } from "@/ui/sections/announcement-bar/announcement-bar";
++import {
++	getStaticStorefrontChannelSlugs,
++	needsAsyncChannelDiscovery,
++	shouldFetchChannelMetadata,
++	toChannelSelectOptions,
++} from "@/config/channels";
++import { getStorefrontChannelSlugs } from "@/lib/channel-slugs";
++import { getCachedChannelsList } from "@/lib/channels/get-channels-data";
++import { getStorefrontLocaleOptions } from "@/lib/locale-display";
++import { StorefrontRegionPicker } from "@/ui/components/storefront-region-picker";
+ import { DismissibleAnnouncementBar } from "@/ui/sections/announcement-bar/announcement-bar-slot";
+ 
+ export type BrowseRouteParams = Promise<{ locale: string; channel: string }>;
+@@ -100,6 +110,26 @@ export async function HeaderSearchSlot({ params }: { params: BrowseRouteParams }
+ 	);
+ }
+ 
++/** PINSO: language + currency picker next to the search bar (same options as the footer picker). */
++export async function HeaderRegionSlot() {
++	const resolvedSlugs = needsAsyncChannelDiscovery()
++		? await getStorefrontChannelSlugs()
++		: getStaticStorefrontChannelSlugs();
++	const channels = shouldFetchChannelMetadata(resolvedSlugs) ? await getCachedChannelsList() : null;
++	const selectorChannels =
++		channels?.channels && resolvedSlugs.length > 0
++			? toChannelSelectOptions(channels.channels, resolvedSlugs)
++			: [];
++
++	return (
++		<StorefrontRegionPicker
++			locales={getStorefrontLocaleOptions()}
++			channels={selectorChannels}
++			placement="header"
++		/>
++	);
++}
++
+ /**
+  * Cookie/session header actions (user menu + cart badge) in one dynamic slot.
+  * Auth SDK expiry uses `Date.now()` — a single `io()` boundary before both avoids PPF
+diff --git a/src/app/(storefront)/[locale]/[channel]/(main)/browse-header-frame.tsx b/src/app/(storefront)/[locale]/[channel]/(main)/browse-header-frame.tsx
+index 9be626e..d5d5a84 100644
+--- a/src/app/(storefront)/[locale]/[channel]/(main)/browse-header-frame.tsx
++++ b/src/app/(storefront)/[locale]/[channel]/(main)/browse-header-frame.tsx
+@@ -6,6 +6,7 @@ import {
+ 	HeaderActionsSlot,
+ 	HeaderMobileMenuSlot,
+ 	HeaderNavSlot,
++	HeaderRegionSlot,
+ 	HeaderSearchSlot,
+ 	type BrowseRouteParams,
+ } from "./browse-chrome-slots";
+@@ -63,6 +64,9 @@ export function BrowseHeaderFrame({ params }: { params: BrowseRouteParams }) {
+ 					</Suspense>
+ 
+ 					<div className="flex items-center gap-1">
++						<Suspense fallback={null}>
++							<HeaderRegionSlot />
++						</Suspense>
+ 						<Suspense fallback={<HeaderActionsSkeleton />}>
+ 							<HeaderActionsSlot params={params} />
+ 						</Suspense>
+diff --git a/src/ui/components/storefront-region-picker.tsx b/src/ui/components/storefront-region-picker.tsx
+index db9d3c3..f8f1fab 100644
+--- a/src/ui/components/storefront-region-picker.tsx
++++ b/src/ui/components/storefront-region-picker.tsx
+@@ -23,6 +23,8 @@ type StorefrontRegionPickerProps = {
+ 	locales: LocaleSelectOption[];
+ 	channels: ChannelSelectOption[];
+ 	variant?: "default" | "inverted";
++	/** PINSO: `header` — compact trigger (globe only on small screens), menu opens downwards */
++	placement?: "footer" | "header";
+ 	className?: string;
+ };
+ 
+@@ -92,6 +94,7 @@ export function StorefrontRegionPicker({
+ 	locales,
+ 	channels,
+ 	variant = "default",
++	placement = "footer",
+ 	className,
+ }: StorefrontRegionPickerProps) {
+ 	const { locale, channel, navigateToLocale, navigateToChannel } = useStorefrontRegionNavigation();
+@@ -116,16 +119,18 @@ export function StorefrontRegionPicker({
+ 	}
+ 
+ 	const inverted = variant === "inverted";
++	const inHeader = placement === "header";
+ 
+ 	return (
+ 		<DropdownMenu>
+ 			<DropdownMenuTrigger
+ 				className={cn(
+-					"group inline-flex max-w-full items-center gap-2.5 rounded-full border px-4 py-2.5 text-sm transition-all",
++					"group inline-flex max-w-full items-center rounded-full border text-sm transition-all",
++					inHeader ? "gap-1.5 px-2.5 py-2 xl:px-3" : "gap-2.5 px-4 py-2.5",
+ 					"focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2",
+ 					inverted
+-						? "border-inverse/20 bg-background/5 hover:border-inverse/35 hover:bg-background/10 focus-visible:ring-background/40 text-inverse-subtle hover:text-inverse focus-visible:ring-offset-foreground"
+-						: "hover:border-border/80 hover:bg-secondary/60 border-border bg-background text-foreground shadow-sm focus-visible:ring-ring focus-visible:ring-offset-background",
++						? "border-inverse/20 bg-background/5 text-inverse-subtle hover:border-inverse/35 hover:bg-background/10 hover:text-inverse focus-visible:ring-background/40 focus-visible:ring-offset-foreground"
++						: "border-border bg-background text-foreground shadow-sm hover:border-border/80 hover:bg-secondary/60 focus-visible:ring-ring focus-visible:ring-offset-background",
+ 					className,
+ 				)}
+ 				aria-label={t("ariaLabel")}
+@@ -137,10 +142,11 @@ export function StorefrontRegionPicker({
+ 					)}
+ 					aria-hidden
+ 				/>
+-				<span className="truncate font-medium">{summary}</span>
++				<span className={cn("truncate font-medium", inHeader && "hidden xl:inline")}>{summary}</span>
+ 				<ChevronDown
+ 					className={cn(
+ 						"h-4 w-4 shrink-0 transition-transform group-data-[state=open]:rotate-180",
++						inHeader && "hidden xl:block",
+ 						inverted ? "opacity-60" : "text-muted-foreground",
+ 					)}
+ 					aria-hidden
+@@ -148,8 +154,8 @@ export function StorefrontRegionPicker({
+ 			</DropdownMenuTrigger>
+ 
+ 			<DropdownMenuContent
+-				align="start"
+-				side="top"
++				align={inHeader ? "end" : "start"}
++				side={inHeader ? "bottom" : "top"}
+ 				sideOffset={10}
+ 				collisionPadding={16}
+ 				className={cn(
+@@ -167,7 +173,7 @@ export function StorefrontRegionPicker({
+ 											key={item.slug}
+ 											value={item.slug}
+ 											lang={item.slug}
+-											className="data-[state=checked]:bg-accent/60 my-0.5 rounded-lg py-2.5 pl-3 pr-3 [&>span:first-child]:hidden"
++											className="my-0.5 rounded-lg py-2.5 pl-3 pr-3 data-[state=checked]:bg-accent/60 [&>span:first-child]:hidden"
+ 										>
+ 											<OptionRow label={item.label} selected={item.slug === locale} />
+ 										</DropdownMenuRadioItem>
+@@ -185,7 +191,7 @@ export function StorefrontRegionPicker({
+ 										<DropdownMenuRadioItem
+ 											key={item.id}
+ 											value={item.slug}
+-											className="data-[state=checked]:bg-accent/60 my-0.5 rounded-lg py-2.5 pl-3 pr-3 [&>span:first-child]:hidden"
++											className="my-0.5 rounded-lg py-2.5 pl-3 pr-3 data-[state=checked]:bg-accent/60 [&>span:first-child]:hidden"
+ 										>
+ 											<OptionRow
+ 												label={item.displayLabel}
