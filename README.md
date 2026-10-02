@@ -93,7 +93,7 @@ node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs
 
 本地开发时在 `deploy/account-gw/.env.local`（不提交）中配置同样的变量，并额外设置 `SALEOR_API_URL=http://localhost:8000/graphql/`、`STOREFRONT_URL=http://localhost:3000`；Turnstile 可用官方测试密钥（站点 `1x00000000000000000000AA`，密钥 `1x0000000000000000000000000000000AA`，始终通过）。
 
-注册后 Saleor 会发送确认邮件，顾客点击链接（前台登录页 `/zh/cn/login?confirm=1&…`）输入密码确认后登录；忘记密码时发送重置链接（同样指向前台登录页，带 `email`、`token` 参数时显示设置新密码）。旧版前台发出的 `/confirm-account`、`/reset-password` 链接由 Nginx 跳转到新地址。
+注册后 Saleor 会发送确认邮件，顾客点击链接（前台登录页 `/zh/cn/login?confirm=1&…`）输入密码确认后登录；忘记密码时发送重置链接（同样指向前台登录页，带 `email`、`token` 参数时显示设置新密码）。
 
 ## 邮件
 

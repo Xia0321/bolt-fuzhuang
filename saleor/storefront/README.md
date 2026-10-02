@@ -24,7 +24,7 @@ schema.json         内容模型结构，从官方 config/saleor/storefront-cont
 
 ## 网址
 
-`/{语言}/{渠道}/…`：语言 `zh` / `en` / `ja`，渠道 `cn`（人民币）/ `global`（美元）/ `jp`（日元）。首页 `/` 跳转到 `/zh/cn`。结算 `/checkout`，订单查看 `/order/…`。旧版前台的网址（`/shop/…`、`/product/…`、`/pages/…`、确认邮件与重置密码链接等）由 Nginx 跳转到新网址（`deploy/nginx/locations.conf`）。
+`/{语言}/{渠道}/…`：语言 `zh` / `en` / `ja`，渠道 `cn`（人民币）/ `global`（美元）/ `jp`（日元）。首页 `/` 跳转到 `/zh/cn`。结算 `/checkout`，订单查看 `/order/…`。
 
 ## 文案在哪里改
 
