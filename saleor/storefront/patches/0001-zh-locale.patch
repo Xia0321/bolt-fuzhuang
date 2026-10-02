@@ -1,8 +1,8 @@
 diff --git a/messages/en.json b/messages/en.json
-index 94a1cf3..37c1838 100644
+index 94a1cf3..147729c 100644
 --- a/messages/en.json
 +++ b/messages/en.json
-@@ -246,7 +246,12 @@
+@@ -246,7 +246,14 @@
  			"updateAddressFailed": "Failed to update address",
  			"deleteAddressFailed": "Failed to delete address",
  			"setDefaultAddressFailed": "Failed to set default address",
@@ -12,11 +12,13 @@ index 94a1cf3..37c1838 100644
 +			"captchaFailed": "Verification failed. Please try again.",
 +			"captchaLoadFailed": "The verification couldn't load. Check your network and refresh the page.",
 +			"signupRateLimited": "Too many sign-up attempts. Please try again later.",
-+			"passwordTooWeak": "This password is too simple. Use a longer password that isn't easy to guess."
++			"passwordTooWeak": "This password is too simple. Use a longer password that isn't easy to guess.",
++			"accountNotConfirmed": "This account hasn't been confirmed yet. Please click the link in the confirmation email we sent you, then sign in.",
++			"accountInactive": "This account has been deactivated. Please contact us."
  		},
  		"login": {
  			"title": "Welcome Back",
-@@ -269,7 +274,8 @@
+@@ -269,7 +276,8 @@
  			"goToSignIn": "Go to Sign In",
  			"terms": "By creating an account, you agree to our <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>.",
  			"termsLink": "Terms of Service",
@@ -26,7 +28,7 @@ index 94a1cf3..37c1838 100644
  		},
  		"setPassword": {
  			"title": "Set New Password",
-@@ -455,7 +461,8 @@
+@@ -455,7 +463,8 @@
  			"itemUnavailableRemoveFailed": "Could not remove this item. Try again.",
  			"fulfillmentCheckFailed": "Could not verify item availability. Please try again.",
  			"crashTitle": "Checkout error",
@@ -36,7 +38,7 @@ index 94a1cf3..37c1838 100644
  		},
  		"contact": {
  			"title": "Contact",
-@@ -491,7 +498,10 @@
+@@ -491,7 +500,10 @@
  			"shipTo": "Ship to",
  			"method": "Method",
  			"delivery": "Delivery",
@@ -48,7 +50,7 @@ index 94a1cf3..37c1838 100644
  		},
  		"promo": {
  			"placeholder": "Discount code",
-@@ -508,7 +518,8 @@
+@@ -508,7 +520,8 @@
  			"selectCountry": "Select country",
  			"backToSavedAddresses": "← Back to saved addresses",
  			"emptySavedShipping": "You don't have any saved addresses yet. Please enter your shipping address below.",
@@ -58,7 +60,7 @@ index 94a1cf3..37c1838 100644
  		},
  		"billing": {
  			"title": "Billing address",
-@@ -522,7 +533,9 @@
+@@ -522,7 +535,9 @@
  			"setDefaultShipping": "Set as my default shipping address",
  			"setDefaultBilling": "Set as my default billing address",
  			"defaultBadge": "Default",
@@ -69,7 +71,7 @@ index 94a1cf3..37c1838 100644
  		},
  		"payment": {
  			"totalUpdatedTitle": "Your order total was updated",
-@@ -631,5 +644,10 @@
+@@ -631,5 +646,13 @@
  			"paymentWebhookFailed": "Payment app webhook failed. In Saleor Dashboard → Apps → Dummy Payment App, check webhook deliveries are succeeding.",
  			"paymentInitFailed": "Payment could not be initialized. Check that the payment app is running in Saleor."
  		}
@@ -78,13 +80,16 @@ index 94a1cf3..37c1838 100644
 +		"tagline": "Poetry Woven in Fabric",
 +		"privacy": "Privacy Policy",
 +		"terms": "Terms of Service"
++	},
++	"home": {
++		"featuredEmpty": "Featured products will appear here once added to your catalog."
  	}
  }
 diff --git a/messages/ja.json b/messages/ja.json
-index c8be825..77abfff 100644
+index c8be825..01eee02 100644
 --- a/messages/ja.json
 +++ b/messages/ja.json
-@@ -246,7 +246,12 @@
+@@ -246,7 +246,14 @@
  			"updateAddressFailed": "住所の更新に失敗しました",
  			"deleteAddressFailed": "住所の削除に失敗しました",
  			"setDefaultAddressFailed": "既定の住所の設定に失敗しました",
@@ -94,11 +99,13 @@ index c8be825..77abfff 100644
 +			"captchaFailed": "認証に失敗しました。もう一度お試しください。",
 +			"captchaLoadFailed": "認証を読み込めませんでした。ネットワークを確認してページを再読み込みしてください。",
 +			"signupRateLimited": "登録の試行回数が多すぎます。しばらくしてからもう一度お試しください。",
-+			"passwordTooWeak": "パスワードが単純すぎます。推測されにくい、より長いパスワードを使用してください。"
++			"passwordTooWeak": "パスワードが単純すぎます。推測されにくい、より長いパスワードを使用してください。",
++			"accountNotConfirmed": "アカウントがまだ確認されていません。確認メールのリンクをクリックしてからログインしてください。",
++			"accountInactive": "このアカウントは無効になっています。お問い合わせください。"
  		},
  		"login": {
  			"title": "おかえりなさい",
-@@ -269,7 +274,8 @@
+@@ -269,7 +276,8 @@
  			"goToSignIn": "サインインへ",
  			"terms": "アカウントを作成すると、<terms>利用規約</terms>および<privacy>プライバシーポリシー</privacy>に同意したものとみなされます。",
  			"termsLink": "利用規約",
@@ -108,7 +115,7 @@ index c8be825..77abfff 100644
  		},
  		"setPassword": {
  			"title": "新しいパスワードを設定",
-@@ -455,7 +461,8 @@
+@@ -455,7 +463,8 @@
  			"itemUnavailableRemoveFailed": "Could not remove this item. Try again.",
  			"fulfillmentCheckFailed": "Could not verify item availability. Please try again.",
  			"crashTitle": "チェックアウトエラー",
@@ -118,7 +125,7 @@ index c8be825..77abfff 100644
  		},
  		"contact": {
  			"title": "連絡先",
-@@ -488,7 +495,10 @@
+@@ -488,7 +497,10 @@
  			"shipTo": "お届け先",
  			"method": "方法",
  			"delivery": "配送",
@@ -130,7 +137,7 @@ index c8be825..77abfff 100644
  		},
  		"promo": {
  			"placeholder": "割引コード",
-@@ -505,7 +515,8 @@
+@@ -505,7 +517,8 @@
  			"selectCountry": "国を選択",
  			"backToSavedAddresses": "← 保存済み住所に戻る",
  			"emptySavedShipping": "保存済みの住所はまだありません。下に配送先住所を入力してください。",
@@ -140,7 +147,7 @@ index c8be825..77abfff 100644
  		},
  		"billing": {
  			"title": "請求先住所",
-@@ -519,7 +530,9 @@
+@@ -519,7 +532,9 @@
  			"setDefaultShipping": "既定の配送先住所に設定",
  			"setDefaultBilling": "既定の請求先住所に設定",
  			"defaultBadge": "既定",
@@ -151,7 +158,7 @@ index c8be825..77abfff 100644
  		},
  		"payment": {
  			"totalUpdatedTitle": "注文合計が更新されました",
-@@ -629,5 +642,10 @@
+@@ -629,5 +644,13 @@
  			"paymentWebhookFailed": "決済アプリのWebhookが失敗しました。Saleorダッシュボード → Apps → Dummy Payment App でWebhook配信が成功しているか確認してください。",
  			"paymentInitFailed": "支払いを初期化できませんでした。Saleorで決済アプリが稼働しているか確認してください。"
  		}
@@ -160,14 +167,17 @@ index c8be825..77abfff 100644
 +		"tagline": "織物が紡ぐ詩",
 +		"privacy": "プライバシーポリシー",
 +		"terms": "利用規約"
++	},
++	"home": {
++		"featuredEmpty": "おすすめ商品は追加されるとここに表示されます。"
  	}
  }
 diff --git a/messages/zh.json b/messages/zh.json
 new file mode 100644
-index 0000000..f766c44
+index 0000000..02ee7da
 --- /dev/null
 +++ b/messages/zh.json
-@@ -0,0 +1,653 @@
+@@ -0,0 +1,658 @@
 +{
 +	"cart": {
 +		"drawer": {
@@ -421,7 +431,9 @@ index 0000000..f766c44
 +			"captchaFailed": "人机验证未通过，请重试。",
 +			"captchaLoadFailed": "人机验证加载失败，请检查网络后刷新页面。",
 +			"signupRateLimited": "注册尝试次数过多，请稍后再试。",
-+			"passwordTooWeak": "密码过于简单，请使用更长、不易被猜到的密码。"
++			"passwordTooWeak": "密码过于简单，请使用更长、不易被猜到的密码。",
++			"accountNotConfirmed": "账号尚未确认，请先点击注册确认邮件中的链接，再登录。",
++			"accountInactive": "该账号已停用，请联系我们。"
 +		},
 +		"login": {
 +			"title": "欢迎回来",
@@ -819,6 +831,9 @@ index 0000000..f766c44
 +		"tagline": "以织物书写的诗意",
 +		"privacy": "隐私政策",
 +		"terms": "服务条款"
++	},
++	"home": {
++		"featuredEmpty": "精选商品添加后会显示在这里。"
 +	}
 +}
 diff --git a/src/config/locale.ts b/src/config/locale.ts
@@ -893,3 +908,35 @@ index 798032d..c6b4779 100644
  };
  
  function slugAliasForLocale(locale: LocaleSlug): keyof LocaleSlugTranslationFields {
+diff --git a/src/ui/sections/featured-collection-section/featured-collection-section.tsx b/src/ui/sections/featured-collection-section/featured-collection-section.tsx
+index 92ecba3..c61a223 100644
+--- a/src/ui/sections/featured-collection-section/featured-collection-section.tsx
++++ b/src/ui/sections/featured-collection-section/featured-collection-section.tsx
+@@ -1,3 +1,4 @@
++import { getTranslations } from "next-intl/server";
+ import { getFeaturedProducts } from "@/lib/catalog/get-featured-products";
+ import { FEATURED_COLLECTION_IMAGE_SIZES } from "@/lib/images";
+ import { ProductGrid, type ProductGridDesktopColumns } from "@/ui/components/plp/product-grid";
+@@ -34,7 +35,10 @@ export async function FeaturedCollectionSection({
+ 	width = "content",
+ 	className,
+ }: FeaturedCollectionSectionProps) {
+-	const products = await getFeaturedProducts(channel, locale, limit, collectionSlug);
++	const [products, t] = await Promise.all([
++		getFeaturedProducts(channel, locale, limit, collectionSlug),
++		getTranslations({ locale, namespace: "home" }),
++	]);
+ 	const headingId = "featured-collection-heading";
+ 
+ 	return (
+@@ -61,9 +65,7 @@ export async function FeaturedCollectionSection({
+ 					desktopColumns={desktopColumns}
+ 				/>
+ 			) : (
+-				<p className="text-muted-foreground">
+-					Featured products will appear here once added to your catalog.
+-				</p>
++				<p className="text-muted-foreground">{t("featuredEmpty")}</p>
+ 			)}
+ 		</Section>
+ 	);

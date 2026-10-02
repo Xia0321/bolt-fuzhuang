@@ -98,6 +98,37 @@ index a922bf1..cf1337c 100644
  	const result = await executeRawGraphQL<AccountRegisterResult>({
  		query: REGISTER_MUTATION,
  		variables: {
+diff --git a/src/ui/components/auth/login-mode.tsx b/src/ui/components/auth/login-mode.tsx
+index d9409b2..de56b98 100644
+--- a/src/ui/components/auth/login-mode.tsx
++++ b/src/ui/components/auth/login-mode.tsx
+@@ -56,9 +56,14 @@ export function LoginMode() {
+ 				setError(
+ 					isRateLimited
+ 						? t("errors.rateLimited")
+-						: isInvalidCredentials
+-							? t("errors.invalidCredentials")
+-							: t("errors.signInFailed"),
++						: // PINSO: registered but the confirmation email link has not been clicked yet
++							err.code === "ACCOUNT_NOT_CONFIRMED"
++							? t("errors.accountNotConfirmed")
++							: err.code === "INACTIVE"
++								? t("errors.accountInactive")
++								: isInvalidCredentials
++									? t("errors.invalidCredentials")
++									: t("errors.signInFailed"),
+ 				);
+ 				return;
+ 			}
+@@ -138,7 +143,7 @@ export function LoginMode() {
+ 
+ 				<form onSubmit={handleLogin} className="space-y-4">
+ 					{error && (
+-						<div role="alert" className="bg-destructive/10 rounded-md p-3 text-sm text-destructive">
++						<div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
+ 							{error}
+ 						</div>
+ 					)}
 diff --git a/src/ui/components/sign-up-form.tsx b/src/ui/components/sign-up-form.tsx
 index e24e5e2..2b34f34 100644
 --- a/src/ui/components/sign-up-form.tsx
