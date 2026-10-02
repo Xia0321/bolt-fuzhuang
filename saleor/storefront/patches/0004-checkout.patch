@@ -1,5 +1,5 @@
 diff --git a/src/app/(checkout)/actions.ts b/src/app/(checkout)/actions.ts
-index 560b830..5f5c3a9 100644
+index 560b830..1c176c1 100644
 --- a/src/app/(checkout)/actions.ts
 +++ b/src/app/(checkout)/actions.ts
 @@ -3,6 +3,7 @@
@@ -10,8 +10,11 @@ index 560b830..5f5c3a9 100644
  	CheckoutAddPromoCodeDocument,
  	CheckoutBillingAddressUpdateDocument,
  	CheckoutCompleteDocument,
-@@ -23,6 +24,8 @@ import {
+@@ -21,8 +22,11 @@ import {
+ 	TransactionInitializeDocument,
+ 	TransactionProcessDocument,
  	UserSetDefaultAddressDocument,
++	UserAddressUpdateDocument,
  	type AddressValidationRulesQuery,
  	type AddressValidationRulesQueryVariables,
 +	type CheckoutPaymentCreateMutation,
@@ -19,7 +22,16 @@ index 560b830..5f5c3a9 100644
  	type CheckoutAddPromoCodeMutation,
  	type CheckoutAddPromoCodeMutationVariables,
  	type CheckoutBillingAddressUpdateMutation,
-@@ -150,6 +153,11 @@ const paymentGatewaysInitializeDocument = toTypedDocument<
+@@ -59,6 +63,8 @@ import {
+ 	type TransactionProcessMutationVariables,
+ 	type UserSetDefaultAddressMutation,
+ 	type UserSetDefaultAddressMutationVariables,
++	type UserAddressUpdateMutation,
++	type UserAddressUpdateMutationVariables,
+ 	type AddressInput,
+ 	type AddressTypeEnum,
+ 	type CountryCode,
+@@ -150,6 +156,11 @@ const paymentGatewaysInitializeDocument = toTypedDocument<
  	PaymentGatewaysInitializeMutationVariables
  >(PaymentGatewaysInitializeDocument);
  
@@ -31,7 +43,19 @@ index 560b830..5f5c3a9 100644
  const transactionInitializeDocument = toTypedDocument<
  	TransactionInitializeMutation,
  	TransactionInitializeMutationVariables
-@@ -396,7 +404,7 @@ export async function detachCheckoutCustomer(checkoutId: string): Promise<void>
+@@ -189,6 +200,11 @@ const userSetDefaultAddressDocument = toTypedDocument<
+ 	UserSetDefaultAddressMutationVariables
+ >(UserSetDefaultAddressDocument);
+ 
++const userAddressUpdateDocument = toTypedDocument<
++	UserAddressUpdateMutation,
++	UserAddressUpdateMutationVariables
++>(UserAddressUpdateDocument);
++
+ /** Live checkout read for client sync — bypasses Next.js router/RSC cache. */
+ export async function syncCheckoutFromServer(checkoutId: string): Promise<CheckoutFetchResult> {
+ 	return fetchCheckoutOnServer(checkoutId);
+@@ -396,7 +412,7 @@ export async function detachCheckoutCustomer(checkoutId: string): Promise<void>
  
  export async function calculateDeliveryOptions(checkoutId: string): Promise<DeliveryOptionsActionResult> {
  	const result = await executeAuthenticatedGraphQL(deliveryOptionsCalculateDocument, {
@@ -40,7 +64,7 @@ index 560b830..5f5c3a9 100644
  		cache: "no-cache",
  	});
  
-@@ -486,6 +494,45 @@ export async function initializePaymentGateways(
+@@ -486,6 +502,45 @@ export async function initializePaymentGateways(
  	return { ok: true, data: payload };
  }
  
@@ -86,22 +110,61 @@ index 560b830..5f5c3a9 100644
  export async function initializeCheckoutTransaction(
  	variables: TransactionInitializeMutationVariables,
  ): Promise<TransactionInitializeActionResult> {
+@@ -752,6 +807,36 @@ export async function requestCheckoutPasswordReset(input: {
+ 	return { ok: true };
+ }
+ 
++/** PINSO: edit a saved address of the signed-in customer from checkout (address book entry). */
++export async function updateUserAddress(
++	addressId: string,
++	address: AddressInput,
++): Promise<SimpleActionResult> {
++	const result = await executeAuthenticatedGraphQL(userAddressUpdateDocument, {
++		variables: { id: addressId, address },
++		cache: "no-cache",
++	});
++
++	if (!result.ok) {
++		return { ok: false, error: result.error.message };
++	}
++
++	const errors = result.data.accountAddressUpdate?.errors ?? [];
++	if (errors.length > 0) {
++		return {
++			ok: false,
++			error: errors[0].message ?? undefined,
++			fieldErrors: errors.map((error) => ({
++				field: error.field,
++				message: error.message,
++				code: "INVALID" as const,
++			})),
++		};
++	}
++
++	return { ok: true };
++}
++
+ export async function setUserDefaultAddress(
+ 	addressId: string,
+ 	type: AddressTypeEnum,
 diff --git a/src/app/(checkout)/checkout-transport.ts b/src/app/(checkout)/checkout-transport.ts
-index cdbbfdf..1b6dfd1 100644
+index cdbbfdf..0967864 100644
 --- a/src/app/(checkout)/checkout-transport.ts
 +++ b/src/app/(checkout)/checkout-transport.ts
-@@ -1,5 +1,6 @@
+@@ -1,5 +1,7 @@
  import {
  	attachCustomerToCheckout,
 +	createLegacyCheckoutPayment,
++	updateUserAddress,
  	initializeCheckoutTransaction,
  	initializePaymentGateways,
  	processCheckoutTransaction,
-@@ -21,5 +22,6 @@ export const nextCheckoutTransport: CheckoutTransport = {
+@@ -21,5 +23,7 @@ export const nextCheckoutTransport: CheckoutTransport = {
  	initializePaymentGateways,
  	initializeTransaction: initializeCheckoutTransaction,
  	processTransaction: processCheckoutTransaction,
 +	createLegacyPayment: createLegacyCheckoutPayment,
++	updateUserAddress,
  	completeCheckout: runCheckoutComplete,
  };
 diff --git a/src/app/(checkout)/city-choices-action.ts b/src/app/(checkout)/city-choices-action.ts
@@ -145,10 +208,70 @@ index 0000000..fd2b228
 +	return choices;
 +}
 diff --git a/src/checkout/components/payment/billing-address-section.tsx b/src/checkout/components/payment/billing-address-section.tsx
-index 91610e1..f6f12d5 100644
+index 91610e1..95218c1 100644
 --- a/src/checkout/components/payment/billing-address-section.tsx
 +++ b/src/checkout/components/payment/billing-address-section.tsx
-@@ -278,6 +278,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+@@ -18,6 +18,8 @@ export interface BillingAddressData {
+ 	formData: Record<string, string>;
+ 	/** If set, use this saved address instead of formData */
+ 	selectedAddressId?: string | null;
++	/** PINSO: formData is an edit of this saved address — update the address book entry first */
++	editingAddressId?: string | null;
+ }
+ 
+ export interface BillingAddressSectionProps {
+@@ -111,6 +113,9 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 
+ 	// For logged-in users: track whether to show saved addresses or new address form
+ 	const [showNewAddressForm, setShowNewAddressForm] = useState(false);
++	// PINSO: saved address being edited in the form (null = adding a new address)
++	const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
++	const tAccount = useTranslations("account.addresses");
+ 
+ 	// Selected saved address ID (for logged-in users)
+ 	const [selectedAddressId, setSelectedAddressId] = useState<string | null>(() =>
+@@ -140,9 +145,22 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 		if (hasSavedAddresses && !showNewAddressForm && selectedAddressId) {
+ 			onChange({ countryCode, formData, selectedAddressId });
+ 		} else {
+-			onChange({ countryCode, formData, selectedAddressId: null });
++			onChange({
++				countryCode,
++				formData,
++				selectedAddressId: null,
++				editingAddressId: showNewAddressForm ? editingAddressId : null,
++			});
+ 		}
+-	}, [countryCode, formData, selectedAddressId, hasSavedAddresses, showNewAddressForm, onChange]);
++	}, [
++		countryCode,
++		formData,
++		selectedAddressId,
++		hasSavedAddresses,
++		showNewAddressForm,
++		editingAddressId,
++		onChange,
++	]);
+ 
+ 	const applySavedAddress = (id: string) => {
+ 		setSelectedAddressId(id);
+@@ -182,6 +200,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 
+ 	const handleBackToSavedAddresses = () => {
+ 		setShowNewAddressForm(false);
++		setEditingAddressId(null);
+ 		const idToRestore = selectedAddressId ?? getPreferredBillingAddressId();
+ 		if (idToRestore) {
+ 			applySavedAddress(idToRestore);
+@@ -249,6 +268,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 									>
+ 										<ChevronLeft className="h-4 w-4" /> {t("backToSavedAddresses")}
+ 									</button>
++									{editingAddressId && <p className="text-sm font-medium">{tAccount("editAddress")}</p>}
+ 
+ 									{/* Country selector */}
+ 									<div className="space-y-2">
+@@ -278,6 +298,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
  										errors={errors}
  										onFieldChange={updateField}
  										countryAreaChoices={countryAreaChoices}
@@ -156,7 +279,21 @@ index 91610e1..f6f12d5 100644
  										idPrefix="billing-"
  										autocompleteSection="billing"
  									/>
-@@ -346,6 +347,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+@@ -294,7 +315,13 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+ 										name="billingAddress"
+ 										addressType="BILLING"
+ 										sheetTitle={t("selectBillingSheet")}
++										onEdit={(id) => {
++											applySavedAddress(id);
++											setEditingAddressId(id);
++											setShowNewAddressForm(true);
++										}}
+ 										onAddNew={() => {
++											setEditingAddressId(null);
+ 											setShowNewAddressForm(true);
+ 											// Clear form for new entry
+ 											setFormData({
+@@ -346,6 +373,7 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
  								errors={errors}
  								onFieldChange={updateField}
  								countryAreaChoices={countryAreaChoices}
@@ -164,7 +301,7 @@ index 91610e1..f6f12d5 100644
  								idPrefix="billing-"
  								autocompleteSection="billing"
  							/>
-@@ -361,13 +363,14 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
+@@ -361,13 +389,14 @@ export const BillingAddressSection: FC<BillingAddressSectionProps> = ({
   * Hook to get billing address validation info.
   */
  export const useBillingAddressValidation = (countryCode: CountryCode) => {
@@ -233,7 +370,7 @@ index c102132..df4b142 100644
 +	}
 +}
 diff --git a/src/checkout/lib/checkout-transport.ts b/src/checkout/lib/checkout-transport.ts
-index adade38..ff070ba 100644
+index adade38..c32c56d 100644
 --- a/src/checkout/lib/checkout-transport.ts
 +++ b/src/checkout/lib/checkout-transport.ts
 @@ -7,6 +7,7 @@ import type {
@@ -244,10 +381,12 @@ index adade38..ff070ba 100644
  	PaymentGatewaysInitializeActionResult,
  	TransactionInitializeActionResult,
  	TransactionProcessActionResult,
-@@ -41,6 +42,8 @@ export type CheckoutTransport = {
+@@ -41,6 +42,10 @@ export type CheckoutTransport = {
  	processTransaction: (
  		variables: TransactionProcessMutationVariables,
  	) => Promise<TransactionProcessActionResult>;
++	/** PINSO: update a saved address of the signed-in customer (edited in checkout). */
++	updateUserAddress?: (addressId: string, address: AddressInput) => Promise<SimpleActionResult>;
 +	/** PINSO: `checkoutPaymentCreate` for Saleor's built-in dummy payment plugin (Payment API). */
 +	createLegacyPayment?: (input: { checkoutId: string; gatewayId: string }) => Promise<SimpleActionResult>;
  	/** `checkoutComplete` — converts a fully-paid checkout into an order. */
@@ -275,6 +414,33 @@ index 4edce5d..b543dc6 100644
  	const initResult = await getCheckoutTransport().initializeTransaction({
  		checkoutId: context.checkoutId,
  		amount: context.amount,
+diff --git a/src/checkout/lib/payment/update-billing.ts b/src/checkout/lib/payment/update-billing.ts
+index 8b9bf5f..4d9fe99 100644
+--- a/src/checkout/lib/payment/update-billing.ts
++++ b/src/checkout/lib/payment/update-billing.ts
+@@ -62,6 +62,22 @@ export async function updateCheckoutBilling(params: UpdateBillingParams): Promis
+ 			});
+ 		}
+ 
++		// PINSO: an edited saved address — update the address book entry before using it
++		const updateUserAddress = getCheckoutTransport().updateUserAddress;
++		if (!billingData.selectedAddressId && billingData.editingAddressId && updateUserAddress) {
++			const editResult = await updateUserAddress(billingData.editingAddressId, addressInput);
++			if (!editResult.ok) {
++				const errorMap: Record<string, string> = {};
++				for (const err of editResult.fieldErrors ?? []) {
++					errorMap[err.field || "streetAddress1"] = err.message || "Invalid value";
++				}
++				if (Object.keys(errorMap).length === 0) {
++					errorMap.billing = editResult.error ?? "Failed to update address";
++				}
++				return { ok: false, errors: errorMap, focusField: Object.keys(errorMap)[0] };
++			}
++		}
++
+ 		const savedAddressIds = new Set((userAddresses ?? []).map((a) => a.id));
+ 		const saveAddress = getBillingSaveAddressFlag({
+ 			isAuthenticated: authenticated,
 diff --git a/src/checkout/lib/utils/money.ts b/src/checkout/lib/utils/money.ts
 index 650492d..ee9e193 100644
 --- a/src/checkout/lib/utils/money.ts
@@ -506,10 +672,18 @@ index f7c1317..87453c8 100644
  	};
  }
 diff --git a/src/checkout/views/saleor-checkout/information-step.tsx b/src/checkout/views/saleor-checkout/information-step.tsx
-index 4ea2b89..3966869 100644
+index 4ea2b89..7199a47 100644
 --- a/src/checkout/views/saleor-checkout/information-step.tsx
 +++ b/src/checkout/views/saleor-checkout/information-step.tsx
-@@ -22,7 +22,6 @@ import {
+@@ -12,6 +12,7 @@ import {
+ 	updateCheckoutMarketingConsent,
+ 	updateCheckoutShippingAddress,
+ 	registerCheckoutAccount,
++	updateUserAddress,
+ } from "@/app/(checkout)/actions";
+ import { type CheckoutFragment, type CountryCode } from "@/checkout/graphql";
+ import type { CheckoutUser, ServerCheckout } from "@/checkout/lib/checkout-types";
+@@ -22,7 +23,6 @@ import {
  	getAddressInputData,
  	getAddressInputDataFromAddress,
  	isMatchingAddressData,
@@ -517,7 +691,43 @@ index 4ea2b89..3966869 100644
  } from "@/checkout/components/address-form/utils";
  import { useUser } from "@/checkout/hooks/use-user";
  import { useOrphanedCheckoutRecovery } from "@/checkout/hooks/use-orphaned-checkout-recovery";
-@@ -307,7 +306,7 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+@@ -228,7 +228,35 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+ 		setIsEnteringNewAddress(false);
+ 	};
+ 
++	// PINSO: edit a saved address — the address form is prefilled, and on continue the address
++	// book entry is updated before it is used for this checkout
++	const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
++
++	const handleEditAddress = (id: string) => {
++		const address = user?.addresses?.find((a) => a.id === id);
++		if (!address) return;
++		setEditingAddressId(id);
++		setShowNewAddressForm(true);
++		setIsEnteringNewAddress(true);
++		setSelectedAddressId(null);
++		setCountryCode((address.country?.code as CountryCode) || defaultCountry);
++		setFormData({
++			firstName: address.firstName || "",
++			lastName: address.lastName || "",
++			streetAddress1: address.streetAddress1 || "",
++			streetAddress2: address.streetAddress2 || "",
++			companyName: address.companyName || "",
++			city: address.city || "",
++			postalCode: address.postalCode || "",
++			countryArea: address.countryArea || "",
++			cityArea: address.cityArea || "",
++			phone: address.phone || "",
++		});
++		setErrors({});
++	};
++
+ 	const handleShowNewAddressForm = (show: boolean) => {
++		setEditingAddressId(null);
+ 		setShowNewAddressForm(show);
+ 		setIsEnteringNewAddress(show);
+ 		if (show) {
+@@ -307,7 +335,7 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
  				} else {
  					orderedAddressFields.forEach((field) => {
  						if (isRequiredField(field) && !formData[field]) {
@@ -526,7 +736,25 @@ index 4ea2b89..3966869 100644
  						}
  					});
  				}
-@@ -405,11 +404,12 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+@@ -402,14 +430,30 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+ 						}
+ 					} else {
+ 						addressInput = getAddressInputData({ ...formData, countryCode: effectiveCountryCode });
++						if (editingAddressId) {
++							const editResult = await updateUserAddress(editingAddressId, addressInput);
++							if (!editResult.ok) {
++								setErrors(
++									editResult.fieldErrors?.length
++										? mapAddressFieldErrors(
++												editResult.fieldErrors,
++												"streetAddress1",
++												tErrors("updateAddressFailed"),
++											)
++										: { streetAddress1: editResult.error ?? tErrors("updateAddressFailed") },
++								);
++								return;
++							}
++						}
  					}
  
  					if (addressInput) {
@@ -541,6 +769,15 @@ index 4ea2b89..3966869 100644
  						);
  
  						if (!addressResult.ok) {
+@@ -575,6 +619,8 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+ 					defaultAddressId={user?.defaultShippingAddress?.id}
+ 					selectedAddressId={selectedAddressId}
+ 					onSelectAddress={handleSelectAddress}
++					onEditAddress={handleEditAddress}
++					isEditingAddress={editingAddressId !== null}
+ 					showNewAddressForm={showNewAddressForm}
+ 					onShowNewAddressForm={handleShowNewAddressForm}
+ 					countryCode={effectiveCountryCode}
 diff --git a/src/checkout/views/saleor-checkout/order-summary.tsx b/src/checkout/views/saleor-checkout/order-summary.tsx
 index 1cdbabf..2d311ea 100644
 --- a/src/checkout/views/saleor-checkout/order-summary.tsx
@@ -590,10 +827,54 @@ index 1cdbabf..2d311ea 100644
  					</footer>
  				</div>
 diff --git a/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx b/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
-index e2a4991..effe53e 100644
+index e2a4991..bd63dc0 100644
 --- a/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
 +++ b/src/checkout/views/saleor-checkout/sections/shipping-address-section.tsx
-@@ -141,6 +141,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+@@ -25,6 +25,10 @@ interface ShippingAddressSectionProps {
+ 	// Address selection (logged-in users)
+ 	selectedAddressId: string | null;
+ 	onSelectAddress: (id: string | null) => void;
++	/** PINSO: edit a saved address (prefills the form below) */
++	onEditAddress?: (id: string) => void;
++	/** PINSO: the form below is editing a saved address */
++	isEditingAddress?: boolean;
+ 	showNewAddressForm: boolean;
+ 	onShowNewAddressForm: (show: boolean) => void;
+ 
+@@ -54,6 +58,8 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+ 	defaultAddressId,
+ 	selectedAddressId,
+ 	onSelectAddress,
++	onEditAddress,
++	isEditingAddress = false,
+ 	showNewAddressForm,
+ 	onShowNewAddressForm,
+ 	countryCode,
+@@ -68,6 +74,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+ 	countryAreaChoices,
+ }) => {
+ 	const t = useTranslations("checkout.shipping");
++	const tAccount = useTranslations("account.addresses");
+ 	const hasAddresses = userAddresses.length > 0;
+ 	const showAddressList = isAuthenticated && hasAddresses && !showNewAddressForm;
+ 
+@@ -95,6 +102,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+ 						addressType="SHIPPING"
+ 						sheetTitle={t("selectShippingAddressSheet")}
+ 						onAddNew={() => onShowNewAddressForm(true)}
++						onEdit={onEditAddress}
+ 					/>
+ 					{errors.address && <FieldError error={errors.address} />}
+ 				</>
+@@ -110,6 +118,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
+ 							{t("backToSavedAddresses")}
+ 						</button>
+ 					)}
++					{isEditingAddress && <p className="text-sm font-medium">{tAccount("editAddress")}</p>}
+ 
+ 					{/* Country selector */}
+ 					<div className="space-y-2">
+@@ -141,6 +150,7 @@ export const ShippingAddressSection: FC<ShippingAddressSectionProps> = ({
  						errors={errors}
  						onFieldChange={onFieldChange}
  						countryAreaChoices={countryAreaChoices}
