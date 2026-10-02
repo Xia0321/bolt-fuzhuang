@@ -97,7 +97,7 @@ node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs
 
 ## 邮件
 
-使用 Saleor 自带的邮件插件（User emails / Admin emails），经 [Resend](https://resend.com) 的 SMTP 发出，发件域名 pinso.top 已在 Resend 验证。会发送：注册确认、找回密码、订单详情、支付确认、发货通知（含物流单号）等。模板以 Saleor 默认模板为底稿，部署时由 `deploy/saleor/setup_email_templates.py` 按渠道翻译：人民币渠道中文、日元渠道日文、美元渠道英文；员工邮件中文。结尾为「如有任何问题，请联系我们：<联系邮箱>」，联系邮箱取 `.env` 的 `MAIL_CONTACT`，未设置时取后台页面 site-settings 的联系邮箱。后台「扩展 → User emails / Admin emails」中手工改过的模板和标题不会被部署覆盖。
+使用 Saleor 自带的邮件插件（User emails / Admin emails），经 [Resend](https://resend.com) 的 SMTP 发出，发件域名 pinso.top 已在 Resend 验证。会发送：注册确认、找回密码、订单详情、支付确认、发货通知（含物流单号）等。模板以 Saleor 默认模板为底稿，部署时由 `deploy/saleor/setup_email_templates.py` 按渠道翻译：人民币渠道中文、日元渠道日文、美元渠道英文；员工邮件中文。结尾为「如有任何问题，请联系我们：<联系邮箱>」，联系邮箱取 `.env` 的 `MAIL_CONTACT`，未设置时取后台页面 site-settings 的联系邮箱。顾客邮件在后台「扩展 → 已安装 → User emails」或「配置 → 通知 → 客户邮件」按渠道编辑（官方后台原本隐藏了该插件并跳转到未安装的 SMTP 应用，由后台补丁 `0007-customer-emails-plugin` 恢复入口），员工邮件在「配置 → 通知 → 员工邮件」。后台手工改过的模板和标题不会被部署覆盖。
 
 服务器 `/opt/pinso/.env` 需要：
 

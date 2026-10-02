@@ -1,0 +1,122 @@
+diff --git a/src/extensions/index.tsx b/src/extensions/index.tsx
+--- a/src/extensions/index.tsx
++++ b/src/extensions/index.tsx
+@@ -14,14 +14,8 @@
+ import { PermissionEnum } from "@dashboard/graphql";
+ import { sectionNames } from "@dashboard/intl";
+ import NotFound from "@dashboard/NotFound";
+-import {
+-  ADMIN_EMAIL_PLUGIN_ID,
+-  USER_EMAIL_PLUGIN_ID,
+-} from "@dashboard/notificationsSettings/constants";
+-import {
+-  notificationsCustomerEmailsPath,
+-  notificationsStaffEmailsPath,
+-} from "@dashboard/notificationsSettings/urls";
++import { ADMIN_EMAIL_PLUGIN_ID } from "@dashboard/notificationsSettings/constants";
++import { notificationsStaffEmailsPath } from "@dashboard/notificationsSettings/urls";
+ import { parseQs } from "@dashboard/url-utils";
+ import { useIntl } from "react-intl";
+ import { Redirect, type RouteComponentProps, Switch } from "react-router-dom";
+@@ -117,11 +111,6 @@
+     return <Redirect to={notificationsStaffEmailsPath} />;
+   }
+ 
+-  if (id === USER_EMAIL_PLUGIN_ID) {
+-    // Customer transactional email is owned by the SMTP app — same resolver as Configuration.
+-    return <Redirect to={notificationsCustomerEmailsPath} />;
+-  }
+-
+   return <EditPluginExtension id={id} params={params} />;
+ };
+ 
+diff --git a/src/extensions/views/InstalledExtensions/utils.ts b/src/extensions/views/InstalledExtensions/utils.ts
+--- a/src/extensions/views/InstalledExtensions/utils.ts
++++ b/src/extensions/views/InstalledExtensions/utils.ts
+@@ -1,15 +1,9 @@
+ import { type InstalledExtension } from "@dashboard/extensions/types";
+ import { type PluginBaseFragment } from "@dashboard/graphql";
+-import {
+-  ADMIN_EMAIL_PLUGIN_ID,
+-  USER_EMAIL_PLUGIN_ID,
+-} from "@dashboard/notificationsSettings/constants";
++import { ADMIN_EMAIL_PLUGIN_ID } from "@dashboard/notificationsSettings/constants";
+ 
+-const HIDDEN_PLUGIN_IDS = new Set([
+-  "mirumee.webhooks",
+-  ADMIN_EMAIL_PLUGIN_ID,
+-  USER_EMAIL_PLUGIN_ID,
+-]);
++// PINSO：顾客邮件使用 Saleor 自带的 User emails 插件（未使用 SMTP 应用），在已安装列表中显示以便编辑模板
++const HIDDEN_PLUGIN_IDS = new Set(["mirumee.webhooks", ADMIN_EMAIL_PLUGIN_ID]);
+ 
+ export const filterOutHiddenPlugins = (plugin: PluginBaseFragment) =>
+   !HIDDEN_PLUGIN_IDS.has(plugin.id);
+diff --git a/src/notificationsSettings/views/CustomerEmailsRedirect.tsx b/src/notificationsSettings/views/CustomerEmailsRedirect.tsx
+--- a/src/notificationsSettings/views/CustomerEmailsRedirect.tsx
++++ b/src/notificationsSettings/views/CustomerEmailsRedirect.tsx
+@@ -1,56 +1,11 @@
+-import { useAppNavigation } from "@dashboard/extensions/hooks/useAppNavigation";
+-import { ExtensionsPaths } from "@dashboard/extensions/urls";
+-import useNavigator from "@dashboard/hooks/useNavigator";
+-import { SMTP_APP_IDENTIFIER } from "@dashboard/notificationsSettings/constants";
+-import { Box, Spinner, Text } from "@saleor/macaw-ui-next";
+-import { useEffect, useRef, useState } from "react";
+-import { FormattedMessage } from "react-intl";
++import { ExtensionsUrls } from "@dashboard/extensions/urls";
++import { USER_EMAIL_PLUGIN_ID } from "@dashboard/notificationsSettings/constants";
++import { Redirect } from "react-router-dom";
+ 
+-import { notificationsMessages } from "../messages";
+-
+ /**
+- * Opens the installed SMTP app (customer emails). If not installed, sends merchants
+- * to Explore Extensions in this Dashboard — not the public App Store.
++ * PINSO：顾客邮件使用 Saleor 自带的 User emails 插件（未安装 SMTP 应用），
++ * 「配置 → 通知 → 客户邮件」直接打开该插件的设置页（按渠道编辑模板与标题）。
+  */
+-export const CustomerEmailsRedirectView = (): React.ReactNode => {
+-  const navigate = useNavigator();
+-  const { navigateToApp } = useAppNavigation();
+-  const redirected = useRef(false);
+-  const [failed, setFailed] = useState(false);
+-
+-  useEffect(
+-    function redirectToSmtpApp() {
+-      if (redirected.current) {
+-        return;
+-      }
+-
+-      redirected.current = true;
+-
+-      navigateToApp({ identifier: SMTP_APP_IDENTIFIER, replace: true })
+-        .then(navigated => {
+-          if (!navigated) {
+-            navigate(ExtensionsPaths.exploreExtensions, { replace: true });
+-          }
+-        })
+-        // Lookup failure: stay in Dashboard with an error — do not assume “not installed”.
+-        .catch(() => setFailed(true));
+-    },
+-    [navigate, navigateToApp],
+-  );
+-
+-  if (failed) {
+-    return (
+-      <Box display="flex" justifyContent="center" alignItems="center" padding={12}>
+-        <Text size={3} color="default2">
+-          <FormattedMessage {...notificationsMessages.customerEmailsRedirectFailed} />
+-        </Text>
+-      </Box>
+-    );
+-  }
+-
+-  return (
+-    <Box display="flex" justifyContent="center" alignItems="center" padding={12}>
+-      <Spinner />
+-    </Box>
+-  );
+-};
++export const CustomerEmailsRedirectView = (): React.ReactNode => (
++  <Redirect to={ExtensionsUrls.resolveEditPluginExtensionUrl(USER_EMAIL_PLUGIN_ID)} />
++);

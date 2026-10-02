@@ -8,11 +8,14 @@
 # 联系邮箱：环境变量 MAIL_CONTACT（/opt/pinso/.env），未设置时读取后台页面 site-settings 的 contact-email；
 # 都没有时结尾这一句直接去掉。
 #
-# 后台「扩展 → User emails / Admin emails」里手工改过的模板和标题不会被覆盖：只写入空的、默认的、
-# 或本脚本之前写入的（模板开头带 PINSO_MARKER 注释）。
+# 后台手工改过的模板和标题不会被覆盖：只写入空的、默认的、或本脚本写入后未被改动的
+# （模板第一行是 PINSO_MARKER 注释并带内容校验值，内容被改过校验值就对不上）。
+# 顾客邮件在后台「扩展 → 已安装 → User emails」（或「配置 → 通知 → 客户邮件」）按渠道编辑，
+# 员工邮件在「配置 → 通知 → 员工邮件」。
 #
 # 用法（在 Saleor 目录）：python manage.py shell < setup_email_templates.py
 
+import hashlib
 import os
 import re
 from pathlib import Path
@@ -27,7 +30,7 @@ from saleor.plugins.models import EmailTemplate, PluginConfiguration
 from saleor.plugins.user_email import constants as user_c
 from saleor.plugins.user_email.plugin import UserEmailPlugin
 
-PINSO_MARKER = "<!-- pinso-email-template -->"
+PINSO_MARKER = "<!-- pinso-email-template"
 CHANNEL_LANGUAGE = {"cn": "zh", "jp": "ja", "global": "en"}
 
 
@@ -241,15 +244,28 @@ def read_default(package, file_name):
     return (Path(package.__file__).parent / "default_email_templates" / file_name).read_text()
 
 
+def with_marker(html):
+    digest = hashlib.sha1(html.encode()).hexdigest()[:12]
+    return f"{PINSO_MARKER} {digest} -->\n{html}"
+
+
+def is_untouched(value):
+    """本脚本写入后没有在后台改过：第一行标记中的校验值与正文一致。"""
+    first, _, rest = value.partition("\n")
+    match = re.fullmatch(re.escape(PINSO_MARKER) + r" ([0-9a-f]{12}) -->", first.strip())
+    return bool(match) and hashlib.sha1(rest.encode()).hexdigest()[:12] == match.group(1)
+
+
 def write_templates(config, templates):
     written = 0
     for field, html in templates.items():
         current = EmailTemplate.objects.filter(plugin_configuration=config, name=field).first()
-        if current and current.value not in ("", DEFAULT_EMAIL_VALUE) and not current.value.startswith(PINSO_MARKER):
+        if current and current.value not in ("", DEFAULT_EMAIL_VALUE) and not is_untouched(current.value):
             continue  # 后台手工改过，保留
-        EmailTemplate.objects.update_or_create(
-            plugin_configuration=config, name=field, defaults={"value": PINSO_MARKER + "\n" + html}
-        )
+        value = with_marker(html)
+        if current and current.value == value:
+            continue
+        EmailTemplate.objects.update_or_create(plugin_configuration=config, name=field, defaults={"value": value})
         written += 1
     return written
 
