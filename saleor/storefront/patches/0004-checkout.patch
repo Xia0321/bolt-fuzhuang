@@ -306,6 +306,42 @@ index 650492d..ee9e193 100644
  	}
  	return getFormattedMoney(money);
  };
+diff --git a/src/checkout/lib/validate-checkout-fulfillment.test.ts b/src/checkout/lib/validate-checkout-fulfillment.test.ts
+index 5d124ac..1ff7237 100644
+--- a/src/checkout/lib/validate-checkout-fulfillment.test.ts
++++ b/src/checkout/lib/validate-checkout-fulfillment.test.ts
+@@ -64,11 +64,8 @@ describe("validateCheckoutFulfillment", () => {
+ 				lineIds: ["line-m"],
+ 			},
+ 		});
+-		expect(updateAddress).toHaveBeenCalledWith(
+-			checkout.id,
+-			expect.objectContaining({ country: "US" }),
+-			false,
+-		);
++		// PINSO: no saveAddress — keeps the "save to address book" flag set on the shipping step
++		expect(updateAddress).toHaveBeenCalledWith(checkout.id, expect.objectContaining({ country: "US" }));
+ 	});
+ 
+ 	it("fails closed on non-stock address errors so pay cannot proceed", async () => {
+diff --git a/src/checkout/lib/validate-checkout-fulfillment.ts b/src/checkout/lib/validate-checkout-fulfillment.ts
+index 91b2611..c51f88c 100644
+--- a/src/checkout/lib/validate-checkout-fulfillment.ts
++++ b/src/checkout/lib/validate-checkout-fulfillment.ts
+@@ -36,10 +36,12 @@ export async function validateCheckoutFulfillment(
+ 		return { ok: true };
+ 	}
+ 
++	// PINSO: no `saveAddress` — passing `false` here reset the checkout's "save to address
++	// book" flag right before payment, so signed-in shoppers never got their address saved.
++	// Omitted, Saleor uses its default (save); it de-duplicates identical addresses.
+ 	const result = await updateCheckoutShippingAddress(
+ 		checkout.id,
+ 		getAddressInputDataFromAddress(checkout.shippingAddress),
+-		false,
+ 	);
+ 
+ 	if (result.ok) {
 diff --git a/src/checkout/views/saleor-checkout/address-form-fields.tsx b/src/checkout/views/saleor-checkout/address-form-fields.tsx
 index aedab52..e1d65db 100644
 --- a/src/checkout/views/saleor-checkout/address-form-fields.tsx
@@ -470,10 +506,18 @@ index f7c1317..87453c8 100644
  	};
  }
 diff --git a/src/checkout/views/saleor-checkout/information-step.tsx b/src/checkout/views/saleor-checkout/information-step.tsx
-index 4ea2b89..dab0f13 100644
+index 4ea2b89..3966869 100644
 --- a/src/checkout/views/saleor-checkout/information-step.tsx
 +++ b/src/checkout/views/saleor-checkout/information-step.tsx
-@@ -307,7 +307,7 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+@@ -22,7 +22,6 @@ import {
+ 	getAddressInputData,
+ 	getAddressInputDataFromAddress,
+ 	isMatchingAddressData,
+-	isSameAddressInput,
+ } from "@/checkout/components/address-form/utils";
+ import { useUser } from "@/checkout/hooks/use-user";
+ import { useOrphanedCheckoutRecovery } from "@/checkout/hooks/use-orphaned-checkout-recovery";
+@@ -307,7 +306,7 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
  				} else {
  					orderedAddressFields.forEach((field) => {
  						if (isRequiredField(field) && !formData[field]) {
@@ -482,6 +526,21 @@ index 4ea2b89..dab0f13 100644
  						}
  					});
  				}
+@@ -405,11 +404,12 @@ const InformationStepForm: FC<InformationStepFormProps> = ({
+ 					}
+ 
+ 					if (addressInput) {
+-						const addressUnchanged = isSameAddressInput(updatedCheckout.shippingAddress, addressInput);
++						// PINSO: always send the flag — `false` for an unchanged address (going back and
++						// continuing) dropped the "save to address book" choice made on first submit
+ 						const addressResult = await updateCheckoutShippingAddress(
+ 							updatedCheckout.id,
+ 							addressInput,
+-							addressUnchanged ? false : saveAddress,
++							saveAddress,
+ 						);
+ 
+ 						if (!addressResult.ok) {
 diff --git a/src/checkout/views/saleor-checkout/order-summary.tsx b/src/checkout/views/saleor-checkout/order-summary.tsx
 index 1cdbabf..2d311ea 100644
 --- a/src/checkout/views/saleor-checkout/order-summary.tsx
