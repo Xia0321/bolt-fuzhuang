@@ -242,6 +242,9 @@ step "配置邮件服务"
 if grep -q "^RESEND_API_KEY=." .env && grep -q "^MAIL_FROM=." .env; then
   docker compose -p pinso exec -T api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell' \
     < saleor/setup_email.py 2>&1 | grep -E "已启用|测试邮件|跳过|Error|error" || true
+  # 邮件模板与标题：顾客邮件按渠道中文 / 英文 / 日文，员工邮件中文，结尾为联系邮箱（后台手工改过的不覆盖）
+  docker compose -p pinso exec -T api sh -c 'export RSA_PRIVATE_KEY="$(cat /run/secrets/jwt.pem)" && python3 manage.py shell' \
+    < saleor/setup_email_templates.py 2>&1 | grep -E "邮件|联系邮箱|Error|error" || true
 else
   echo "提示：.env 中未配置 RESEND_API_KEY / MAIL_FROM，邮件服务未启用"
 fi

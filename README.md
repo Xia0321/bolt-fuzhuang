@@ -97,7 +97,7 @@ node --env-file=deploy/account-gw/.env.local deploy/account-gw/server.mjs
 
 ## 邮件
 
-使用 Saleor 自带的邮件插件（User emails / Admin emails），经 [Resend](https://resend.com) 的 SMTP 发出，发件域名 pinso.top 已在 Resend 验证。会发送：注册确认、找回密码、订单详情、支付确认、发货通知（含物流单号）等，模板为 Saleor 默认的英文模板，可在后台「扩展 → User emails」按渠道修改。
+使用 Saleor 自带的邮件插件（User emails / Admin emails），经 [Resend](https://resend.com) 的 SMTP 发出，发件域名 pinso.top 已在 Resend 验证。会发送：注册确认、找回密码、订单详情、支付确认、发货通知（含物流单号）等。模板以 Saleor 默认模板为底稿，部署时由 `deploy/saleor/setup_email_templates.py` 按渠道翻译：人民币渠道中文、日元渠道日文、美元渠道英文；员工邮件中文。结尾为「如有任何问题，请联系我们：<联系邮箱>」，联系邮箱取 `.env` 的 `MAIL_CONTACT`，未设置时取后台页面 site-settings 的联系邮箱。后台「扩展 → User emails / Admin emails」中手工改过的模板和标题不会被部署覆盖。
 
 服务器 `/opt/pinso/.env` 需要：
 
@@ -208,6 +208,6 @@ SALEOR_API_URL=http://<IP>/graphql/ SALEOR_EMAIL=<邮箱> SALEOR_PASSWORD=<密�
 - **支付**：当前使用 Saleor 自带的测试网关（`mirumee.payments.dummy`），不会真实扣款。上线需在后台安装 Saleor Stripe 应用并填入密钥，前台 `saleor/storefront/build.env` 中设置 `NEXT_PUBLIC_ENABLE_STRIPE_PAYMENTS=true`、`NEXT_PUBLIC_ALLOW_DUMMY_PAYMENT=false`，并去掉 `deploy/docker-compose.yml` 中的 `ALLOW_DUMMY_PAYMENT`（官方前台已内置 Stripe 支付）
 - **图片**：商品、分类、横幅目前是 Pexels 示例图，需要在后台替换成品牌实拍图（商品图建议 3:4 竖图）
 - **政策文本**：隐私政策、服务条款是占位内容
-- **邮件模板**：目前是 Saleor 默认的英文模板，需要按品牌风格和中日英三语修改
+- **邮件模板**：已按渠道翻译为中/日/英，样式仍是 Saleor 默认样式；联系邮箱 hello@pinsodenim.com 来自初始数据，上线前确认该邮箱可用（或在 `.env` 设置 `MAIL_CONTACT`）
 - **价格**：美元、日元价格是按汇率从人民币换算的，需要在后台逐一核对
 - **首页文案**：首页模型的初始文案沿用旧首页，可在后台「内容 → 模型 → Storefront — Homepage」调整
