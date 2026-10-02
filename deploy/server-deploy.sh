@@ -258,7 +258,19 @@ use_https() { sed "s/__DOMAIN__/$DOMAIN/g" nginx/https.conf.template > "$site"; 
 use_http() { cp nginx/http.conf "$site"; }
 reload_nginx() {
   nginx -t -q
-  if systemctl is-active --quiet nginx; then systemctl reload nginx; else systemctl restart nginx; fi
+  if systemctl is-active --quiet nginx; then
+    # nginx -t 只检查语法；重载时 Nginx 仍可能拒绝新配置（如修改已有限流区的键），只记在日志里且 systemctl 照样返回成功
+    log=/var/log/nginx/error.log
+    lines="$(wc -l < "$log" 2>/dev/null || echo 0)"
+    systemctl reload nginx
+    sleep 1
+    if tail -n +"$((lines + 1))" "$log" 2>/dev/null | grep -F "[emerg]"; then
+      echo "✗ Nginx 拒绝了新配置，仍在使用旧配置（原因见上一行）"
+      exit 1
+    fi
+  else
+    systemctl restart nginx
+  fi
 }
 
 if [ -n "$DOMAIN" ] && [ -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
