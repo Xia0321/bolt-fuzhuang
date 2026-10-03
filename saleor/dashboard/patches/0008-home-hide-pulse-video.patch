@@ -1,0 +1,82 @@
+diff --git a/src/home/HomeEmptyState.tsx b/src/home/HomeEmptyState.tsx
+--- a/src/home/HomeEmptyState.tsx
++++ b/src/home/HomeEmptyState.tsx
+@@ -3,10 +3,9 @@
+ import { IS_CLOUD_INSTANCE } from "@dashboard/config";
+ import { HOMEPAGE_WIDGETS_DOCS_URL } from "@dashboard/links";
+ import { Box, Button, Text } from "@saleor/macaw-ui-next";
+-import { useEffect, useRef } from "react";
+-import { defineMessages, FormattedMessage, useIntl } from "react-intl";
++import { defineMessages, FormattedMessage } from "react-intl";
+ 
+-import { getPulsePromotionLink, PULSE_POSTER_URL, PULSE_VIDEO_URL } from "./getPulsePromotionLink";
++import { getPulsePromotionLink } from "./getPulsePromotionLink";
+ import styles from "./HomeEmptyState.module.css";
+ 
+ const messages = defineMessages({
+@@ -35,11 +34,6 @@
+     defaultMessage: "Explore Pulse",
+     description: "CTA to learn about Saleor Pulse for open-source users",
+   },
+-  videoLabel: {
+-    id: "3zQ8xn",
+-    defaultMessage: "Preview of Saleor Pulse analytics",
+-    description: "accessible label for Pulse promo video",
+-  },
+   createOwnHomepage: {
+     id: "ZKBRtP",
+     defaultMessage: "Create your own app homepage?",
+@@ -48,26 +42,10 @@
+ });
+ 
+ export const HomeEmptyState = (): React.ReactNode => {
+-  const intl = useIntl();
+-  const videoRef = useRef<HTMLVideoElement>(null);
+   const pulseLink = getPulsePromotionLink(IS_CLOUD_INSTANCE);
+   const href = pulseLink.kind === "internal" ? pulseLink.to : pulseLink.href;
+   const isExternal = pulseLink.kind === "external";
+ 
+-  // Native `autoPlay` is fine for soft promo; honor reduced-motion by keeping the poster.
+-  useEffect(function respectReducedMotionPreference() {
+-    const video = videoRef.current;
+-
+-    if (!video || typeof window.matchMedia !== "function") {
+-      return;
+-    }
+-
+-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+-      video.autoplay = false;
+-      video.pause();
+-    }
+-  }, []);
+-
+   return (
+     <Box height="100%" padding={6}>
+       <Box
+@@ -84,25 +62,7 @@
+         padding={8}
+         gap={8}
+       >
+-        <Box className={styles.preview} __width="min(100%, 520px)">
+-          <Box className={styles.frame}>
+-            <video
+-              ref={videoRef}
+-              className={styles.video}
+-              controls
+-              autoPlay
+-              muted
+-              loop
+-              playsInline
+-              preload="metadata"
+-              poster={PULSE_POSTER_URL}
+-              aria-label={intl.formatMessage(messages.videoLabel)}
+-            >
+-              <source src={PULSE_VIDEO_URL} type="video/mp4" />
+-            </video>
+-          </Box>
+-        </Box>
+-
++        {/* PINSO：不显示 Saleor Pulse 宣传视频 */}
+         <Box
+           display="flex"
+           flexDirection="column"
